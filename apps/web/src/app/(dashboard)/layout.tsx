@@ -98,8 +98,8 @@ export default function DashboardLayout({
       <Sidebar />
 
       {/* Main Content Area */}
-      <div className="flex-1 ml-64 flex flex-col min-h-screen bg-background">
-        <main className="flex-1 p-8 overflow-y-auto">
+      <div className="flex-1 ml-64 flex flex-col min-h-screen bg-background min-w-0">
+        <main className="flex-1 p-6 lg:p-8 overflow-y-auto min-w-0">
           {/* Unverified email warning banner */}
           {user && !user.emailVerifiedAt && !user.isAdmin && (
             <div className="mb-6 p-4 rounded-card bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-200">

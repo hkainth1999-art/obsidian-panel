@@ -475,7 +475,7 @@ export default function AdminServersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-text-primary">
             Server Provisioning & Infrastructure
@@ -485,8 +485,8 @@ export default function AdminServersPage() {
           </p>
         </div>
 
-        <Button variant="primary" size="md" onClick={handleOpenModal}>
-          <Plus className="w-4 h-4" /> Provision New Server
+        <Button variant="primary" size="md" onClick={handleOpenModal} className="shrink-0 whitespace-nowrap">
+          <Plus className="w-4 h-4 mr-1.5" /> Provision New Server
         </Button>
       </div>
 
@@ -1128,8 +1128,8 @@ export default function AdminServersPage() {
       </div>
 
       {/* Search and Filters Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 bg-surface border border-border rounded-card">
-        <div className="relative flex-1">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-3 bg-surface border border-border rounded-card">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
@@ -1140,7 +1140,7 @@ export default function AdminServersPage() {
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
           <div className="flex items-center gap-1.5">
             <Filter className="w-3.5 h-3.5 text-text-muted" />
             <select
@@ -1188,183 +1188,187 @@ export default function AdminServersPage() {
             No servers match your current search or filter criteria.
           </div>
         ) : (
-          <table className="w-full text-left text-xs">
-            <thead className="bg-surface-elevated/40 border-b border-border text-[10px] uppercase font-medium text-text-muted">
-              <tr>
-                <th className="px-5 py-3">Server Name</th>
-                <th className="px-5 py-3">Owner</th>
-                <th className="px-5 py-3">Node</th>
-                <th className="px-5 py-3">Address</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Memory</th>
-                <th className="px-5 py-3">CPU</th>
-                <th className="px-5 py-3">Disk</th>
-                <th className="px-5 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {filteredServers?.map((server: any) => (
-                <tr
-                  key={server.uuid}
-                  onClick={() => openServerConfigModal(server)}
-                  className="hover:bg-surface-elevated/30 transition-colors cursor-pointer group"
-                  title="Click to view & configure server hardware, owner, node, limits, and subusers"
-                >
-                  <td className="px-5 py-3.5 font-medium text-text-primary">
-                    <div className="flex items-center gap-2">
-                      <Server className="w-4 h-4 text-primary shrink-0 group-hover:scale-110 transition-transform" />
-                      <div>
-                        <span className="hover:text-primary transition-colors font-medium block">
-                          {server.name}
-                        </span>
-                        <span className="block text-[10px] font-mono text-text-muted">
-                          {server.uuidShort} &bull; Click to configure
-                        </span>
+          <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+            <table className="w-full text-left text-xs min-w-[1150px]">
+              <thead className="bg-surface-elevated/40 border-b border-border text-[10px] uppercase font-medium text-text-muted">
+                <tr>
+                  <th className="px-5 py-3 whitespace-nowrap min-w-[200px]">Server Name</th>
+                  <th className="px-5 py-3 whitespace-nowrap min-w-[160px]">Owner</th>
+                  <th className="px-5 py-3 whitespace-nowrap min-w-[100px]">Node</th>
+                  <th className="px-5 py-3 whitespace-nowrap min-w-[190px]">Address</th>
+                  <th className="px-5 py-3 whitespace-nowrap min-w-[100px]">Status</th>
+                  <th className="px-5 py-3 whitespace-nowrap min-w-[90px]">Memory</th>
+                  <th className="px-5 py-3 whitespace-nowrap min-w-[80px]">CPU</th>
+                  <th className="px-5 py-3 whitespace-nowrap min-w-[90px]">Disk</th>
+                  <th className="px-5 py-3 whitespace-nowrap text-right min-w-[240px]">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {filteredServers?.map((server: any) => (
+                  <tr
+                    key={server.uuid}
+                    onClick={() => openServerConfigModal(server)}
+                    className="hover:bg-surface-elevated/30 transition-colors cursor-pointer group"
+                    title="Click to view & configure server hardware, owner, node, limits, and subusers"
+                  >
+                    <td className="px-5 py-3.5 font-medium text-text-primary whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <Server className="w-4 h-4 text-primary shrink-0 group-hover:scale-110 transition-transform" />
+                        <div>
+                          <span className="hover:text-primary transition-colors font-medium block">
+                            {server.name}
+                          </span>
+                          <span className="block text-[10px] font-mono text-text-muted">
+                            {server.uuidShort} &bull; Click to configure
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 text-text-secondary">
-                    {server.owner ? (
-                      <div>
-                        <span className="font-medium text-text-primary block">{server.owner.username}</span>
-                        <span className="text-[10px] text-text-muted font-mono">{server.owner.email}</span>
-                      </div>
-                    ) : (
-                      <span className="text-text-muted">System / Unknown</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5 text-text-secondary">{server.node}</td>
-                  <td className="px-5 py-3.5">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setManageAllocationsServer(server);
-                      }}
-                      className="font-mono text-[11px] text-left text-text-secondary hover:text-primary transition-colors flex items-center gap-1.5 group"
-                      title="Click to manage allocations for this server"
-                    >
-                      <span className="group-hover:underline">{server.allocation}</span>
-                      {server.allocationsCount && server.allocationsCount > 1 ? (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-sans font-medium">
-                          +{server.allocationsCount - 1} more
-                        </span>
-                      ) : null}
-                    </button>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                        server.status === 'suspended'
-                          ? 'bg-red-500/15 text-red-400 border border-red-500/30'
-                          : server.status === 'installing'
-                          ? 'bg-status-stopping/15 text-status-stopping border border-status-stopping/30'
-                          : server.status === 'install_failed'
-                          ? 'bg-status-error/15 text-status-error border border-status-error/30'
-                          : 'bg-status-running/15 text-status-running border border-status-running/30'
-                      }`}
-                    >
-                      {server.status === 'suspended' ? 'Suspended' : server.status || 'Active'}
-                    </span>
-                    {server.autoSuspendAt && (
-                      <span className="block text-[9.5px] font-mono text-zinc-400 mt-0.5">
-                        Exp: {new Date(server.autoSuspendAt).toLocaleDateString()}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5 font-mono text-[11px] text-text-secondary">
-                    {formatMemory(server.limits.memory)}
-                  </td>
-                  <td className="px-5 py-3.5 font-mono text-[11px] text-text-secondary">
-                    {server.limits.cpu}%
-                  </td>
-                  <td className="px-5 py-3.5 font-mono text-[11px] text-text-secondary">
-                    {formatMemory(server.limits.disk)}
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openServerConfigModal(server);
-                        }}
-                        title="Configure Hardware Limits & Owner"
-                      >
-                        <Sliders className="w-3.5 h-3.5 mr-1" /> Config
-                      </Button>
-                      <Link href={`/servers/${server.uuid}`} onClick={(e) => e.stopPropagation()}>
-                        <Button variant="secondary" size="sm">
-                          Console <ExternalLink className="w-3.5 h-3.5 ml-1" />
-                        </Button>
-                      </Link>
-                      <Button
-                        variant="secondary"
-                        size="sm"
+                    </td>
+                    <td className="px-5 py-3.5 text-text-secondary whitespace-nowrap">
+                      {server.owner ? (
+                        <div>
+                          <span className="font-medium text-text-primary block">{server.owner.username}</span>
+                          <span className="text-[10px] text-text-muted font-mono">{server.owner.email}</span>
+                        </div>
+                      ) : (
+                        <span className="text-text-muted">System / Unknown</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-text-secondary whitespace-nowrap font-medium">{server.node}</td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setManageAllocationsServer(server);
                         }}
-                        className="text-cyan-400 hover:text-cyan-300 border-cyan-500/30"
-                        title="Manage Port Allocations (Voice Chat UDP, Geyser, etc.)"
+                        className="font-mono text-[11px] text-left text-text-secondary hover:text-primary transition-colors flex items-center gap-1.5 group"
+                        title="Click to manage allocations for this server"
                       >
-                        <Network className="w-3.5 h-3.5" />
-                      </Button>
-                      {server.status === 'suspended' ? (
+                        <span className="group-hover:underline">{server.allocation}</span>
+                        {server.allocationsCount && server.allocationsCount > 1 ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-sans font-medium">
+                            +{server.allocationsCount - 1} more
+                          </span>
+                        ) : null}
+                      </button>
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                          server.status === 'suspended'
+                            ? 'bg-red-500/15 text-red-400 border border-red-500/30'
+                            : server.status === 'installing'
+                            ? 'bg-status-stopping/15 text-status-stopping border border-status-stopping/30'
+                            : server.status === 'install_failed'
+                            ? 'bg-status-error/15 text-status-error border border-status-error/30'
+                            : 'bg-status-running/15 text-status-running border border-status-running/30'
+                        }`}
+                      >
+                        {server.status === 'suspended' ? 'Suspended' : server.status || 'Active'}
+                      </span>
+                      {server.autoSuspendAt && (
+                        <span className="block text-[9.5px] font-mono text-zinc-400 mt-0.5">
+                          Exp: {new Date(server.autoSuspendAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 font-mono text-[11px] text-text-secondary whitespace-nowrap">
+                      {formatMemory(server.limits.memory)}
+                    </td>
+                    <td className="px-5 py-3.5 font-mono text-[11px] text-text-secondary whitespace-nowrap">
+                      {server.limits.cpu}%
+                    </td>
+                    <td className="px-5 py-3.5 font-mono text-[11px] text-text-secondary whitespace-nowrap">
+                      {formatMemory(server.limits.disk)}
+                    </td>
+                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <Button
-                          variant="secondary"
+                          variant="primary"
                           size="sm"
-                          disabled={suspendMutation.isPending}
+                          className="shrink-0"
                           onClick={(e) => {
                             e.stopPropagation();
-                            suspendMutation.mutate({ uuid: server.uuid, action: 'unsuspend' });
+                            openServerConfigModal(server);
                           }}
-                          className="text-emerald-400 hover:text-emerald-300 border-emerald-500/30"
-                          title="Unsuspend server"
+                          title="Configure Hardware Limits & Owner"
                         >
-                          <PlayCircle className="w-3.5 h-3.5" />
+                          <Sliders className="w-3.5 h-3.5 mr-1" /> Config
                         </Button>
-                      ) : (
+                        <Link href={`/servers/${server.uuid}`} onClick={(e) => e.stopPropagation()} className="shrink-0">
+                          <Button variant="secondary" size="sm">
+                            Console <ExternalLink className="w-3.5 h-3.5 ml-1" />
+                          </Button>
+                        </Link>
                         <Button
                           variant="secondary"
                           size="sm"
-                          disabled={suspendMutation.isPending}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm(`Suspend server "${server.name}"? The container will be shut down.`)) {
-                              suspendMutation.mutate({ uuid: server.uuid, action: 'suspend' });
+                            setManageAllocationsServer(server);
+                          }}
+                          className="text-cyan-400 hover:text-cyan-300 border-cyan-500/30 shrink-0"
+                          title="Manage Port Allocations (Voice Chat UDP, Geyser, etc.)"
+                        >
+                          <Network className="w-3.5 h-3.5" />
+                        </Button>
+                        {server.status === 'suspended' ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={suspendMutation.isPending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              suspendMutation.mutate({ uuid: server.uuid, action: 'unsuspend' });
+                            }}
+                            className="text-emerald-400 hover:text-emerald-300 border-emerald-500/30 shrink-0"
+                            title="Unsuspend server"
+                          >
+                            <PlayCircle className="w-3.5 h-3.5" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={suspendMutation.isPending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`Suspend server "${server.name}"? The container will be shut down.`)) {
+                                suspendMutation.mutate({ uuid: server.uuid, action: 'suspend' });
+                              }
+                            }}
+                            className="text-amber-400 hover:text-amber-300 border-amber-500/30 shrink-0"
+                            title="Suspend server"
+                          >
+                            <PauseCircle className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          className="shrink-0"
+                          disabled={deleteMutation.isPending}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (
+                              confirm(
+                                `Are you sure you want to permanently delete "${server.name}" (${server.uuidShort})?\n\nThis will remove the container, files, and allocations from Wings.`,
+                              )
+                            ) {
+                              deleteMutation.mutate(server.uuid);
                             }
                           }}
-                          className="text-amber-400 hover:text-amber-300 border-amber-500/30"
-                          title="Suspend server"
                         >
-                          <PauseCircle className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </Button>
-                      )}
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        disabled={deleteMutation.isPending}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (
-                            confirm(
-                              `Are you sure you want to permanently delete "${server.name}" (${server.uuidShort})?\n\nThis will remove the container, files, and allocations from Wings.`,
-                            )
-                          ) {
-                            deleteMutation.mutate(server.uuid);
-                          }
-                        }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

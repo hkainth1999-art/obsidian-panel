@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json --incremental false",
+    "build": "pnpm --filter @obsidian/wings-adapter build && tsc -p tsconfig.json --incremental false",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
