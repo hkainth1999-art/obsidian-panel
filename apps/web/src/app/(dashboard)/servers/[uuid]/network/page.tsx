@@ -174,13 +174,13 @@ export default function ServerNetworkPage({
               </CardDescription>
             </div>
 
-            {canAssignMore && unassignedAllocs.length > 0 && (
+            {currentUser?.isAdmin && canAssignMore && unassignedAllocs.length > 0 && (
               <Button
                 variant="primary"
                 size="sm"
                 onClick={() => setShowAssignModal(true)}
               >
-                <Plus className="w-3.5 h-3.5 mr-1" /> Assign Port
+                <Plus className="w-3.5 h-3.5 mr-1" /> Assign Port (Admin)
               </Button>
             )}
           </div>

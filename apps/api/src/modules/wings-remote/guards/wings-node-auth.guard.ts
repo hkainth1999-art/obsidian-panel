@@ -23,7 +23,7 @@ import { timingSafeEqual } from 'crypto';
 export class WingsNodeAuthGuard implements CanActivate {
   private readonly logger = new Logger(WingsNodeAuthGuard.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -35,52 +35,52 @@ export class WingsNodeAuthGuard implements CanActivate {
       );
     }
 
-    const match = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (!match) {
-      throw new UnauthorizedException(
-        'The required authorization headers were not present in the request.',
-      );
+      const match = authHeader.match(/^Bearer\s+(.+)$/i);
+      if (!match) {
+        throw new UnauthorizedException(
+          'The required authorization headers were not present in the request.',
+        );
+      }
+
+      const credential = (match[1] || '').trim();
+      const dotIndex = credential.indexOf('.');
+      if (dotIndex === -1) {
+        throw new ForbiddenException('The token provided is invalid.');
+      }
+
+      const tokenId = credential.substring(0, dotIndex);
+      const token = credential.substring(dotIndex + 1);
+
+      if (!tokenId || !token) {
+        throw new ForbiddenException('The token provided is invalid.');
+      }
+
+      // Look up the node by token_id
+      const node = await this.prisma.node.findUnique({
+        where: { daemonTokenId: tokenId },
+      });
+
+      if (!node) {
+        throw new ForbiddenException('The token provided is invalid.');
+      }
+
+      // Constant-time comparison to prevent timing attacks
+      // The stored token is the raw token (not hashed) because Wings needs it
+      // in the config.yml file and the Panel must be able to generate it.
+      const storedToken = Buffer.from(node.daemonToken, 'utf-8');
+      const providedToken = Buffer.from(token, 'utf-8');
+
+      if (storedToken.length !== providedToken.length) {
+        throw new ForbiddenException('The token provided is invalid.');
+      }
+
+      if (!timingSafeEqual(storedToken, providedToken)) {
+        throw new ForbiddenException('The token provided is invalid.');
+      }
+
+      // Attach the authenticated node to the request
+      request.authenticatedNode = node;
+
+      return true;
     }
-
-    const credential = (match[1] || '').trim();
-    const dotIndex = credential.indexOf('.');
-    if (dotIndex === -1) {
-      throw new ForbiddenException('The token provided is invalid.');
-    }
-
-    const tokenId = credential.substring(0, dotIndex);
-    const token = credential.substring(dotIndex + 1);
-
-    if (!tokenId || !token) {
-      throw new ForbiddenException('The token provided is invalid.');
-    }
-
-    // Look up the node by token_id
-    const node = await this.prisma.node.findUnique({
-      where: { daemonTokenId: tokenId },
-    });
-
-    if (!node) {
-      throw new ForbiddenException('The token provided is invalid.');
-    }
-
-    // Constant-time comparison to prevent timing attacks
-    // The stored token is the raw token (not hashed) because Wings needs it
-    // in the config.yml file and the Panel must be able to generate it.
-    const storedToken = Buffer.from(node.daemonToken, 'utf-8');
-    const providedToken = Buffer.from(token, 'utf-8');
-
-    if (storedToken.length !== providedToken.length) {
-      throw new ForbiddenException('The token provided is invalid.');
-    }
-
-    if (!timingSafeEqual(storedToken, providedToken)) {
-      throw new ForbiddenException('The token provided is invalid.');
-    }
-
-    // Attach the authenticated node to the request
-    request.authenticatedNode = node;
-
-    return true;
   }
-}

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Body,
@@ -114,5 +115,38 @@ export class AdminServersController {
   @ApiOperation({ summary: 'Delete a server, its files, and container from Wings' })
   async deleteServer(@Param('uuid') uuid: string) {
     return this.serversService.deleteServer(uuid);
+  }
+
+  @Get(':uuid')
+  @ApiOperation({ summary: 'Get full server details for administration' })
+  async getServerAdmin(@Param('uuid') uuid: string) {
+    return this.serversService.getServerByUuid(uuid);
+  }
+
+  @Patch(':uuid')
+  @ApiOperation({ summary: 'Update server hardware limits, owner, node, and sync to Wings' })
+  async updateServer(
+    @Param('uuid') uuid: string,
+    @Body() body: any,
+  ) {
+    return this.serversService.adminUpdateServer(uuid, body);
+  }
+
+  @Post(':uuid/subusers')
+  @ApiOperation({ summary: 'Add a subuser to the server' })
+  async addSubuser(
+    @Param('uuid') uuid: string,
+    @Body() body: { email: string; permissions?: string[] },
+  ) {
+    return this.serversService.addSubuser(uuid, body.email, body.permissions || ['*']);
+  }
+
+  @Delete(':uuid/subusers/:subuserId')
+  @ApiOperation({ summary: 'Remove a subuser from the server' })
+  async deleteSubuser(
+    @Param('uuid') uuid: string,
+    @Param('subuserId', ParseIntPipe) subuserId: number,
+  ) {
+    return this.serversService.deleteSubuser(uuid, subuserId);
   }
 }

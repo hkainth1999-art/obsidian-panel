@@ -24,6 +24,7 @@ model User {
   password          String    // Argon2id hash
   isAdmin           Boolean   @default(false) @map("is_admin")
   language          String    @default("en")
+  avatarUrl         String?   @map("avatar_url") @db.Text
   totpSecret        String?   @map("totp_secret") // Encrypted at rest
   totpEnabled       Boolean   @default(false) @map("totp_enabled")
   totpRecoveryCodes String?   @map("totp_recovery_codes") // Encrypted at rest, JSON array of hashed codes

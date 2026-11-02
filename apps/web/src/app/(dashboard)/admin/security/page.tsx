@@ -29,6 +29,16 @@ export default function AdminSecurityPage() {
   const [banReasonInput, setBanReasonInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [methodFilter, setMethodFilter] = useState('all');
+  const [highlightBanned, setHighlightBanned] = useState(false);
+
+  const scrollToBanned = () => {
+    const el = document.getElementById('banned-ips-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightBanned(true);
+      setTimeout(() => setHighlightBanned(false), 3000);
+    }
+  };
 
   // Queries
   const { data: stats } = useQuery<any>({
@@ -143,16 +153,25 @@ export default function AdminSecurityPage() {
 
       {/* Security Telemetry Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-        <div className="p-3.5 bg-surface border border-border rounded-card space-y-1">
-          <span className="text-[10px] uppercase font-bold text-text-muted flex items-center gap-1.5">
-            <Ban className="w-3.5 h-3.5 text-rose-400" /> Banned IP Addresses
+        <div
+          onClick={scrollToBanned}
+          role="button"
+          tabIndex={0}
+          title="Click to view all banned IP addresses"
+          className="p-3.5 bg-surface border border-border hover:border-rose-500/60 hover:bg-rose-950/20 rounded-card space-y-1 cursor-pointer transition-all duration-200 group"
+        >
+          <span className="text-[10px] uppercase font-bold text-text-muted group-hover:text-rose-400 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <Ban className="w-3.5 h-3.5 text-rose-400" /> Banned IP Addresses
+            </span>
+            <span className="text-[10px] font-sans text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity">View &darr;</span>
           </span>
           <div className="flex items-center justify-between">
             <span className="text-xl font-bold font-mono text-rose-400">
               {stats?.bannedIpsCount ?? (bannedIps || []).length}
             </span>
-            <Badge variant="outline" className="text-[10px] font-mono border-rose-500/30 text-rose-400">
-              Blocked
+            <Badge variant="outline" className="text-[10px] font-mono border-rose-500/30 text-rose-400 group-hover:bg-rose-500/20">
+              Blocked &bull; Click to View
             </Badge>
           </div>
         </div>
@@ -256,7 +275,14 @@ export default function AdminSecurityPage() {
       </Card>
 
       {/* Banned IPs List */}
-      <div className="bg-surface border border-border rounded-card overflow-hidden">
+      <div
+        id="banned-ips-section"
+        className={`bg-surface border rounded-card overflow-hidden transition-all duration-500 ${
+          highlightBanned
+            ? 'border-rose-500 ring-2 ring-rose-500/50 shadow-[0_0_30px_rgba(244,63,94,0.35)]'
+            : 'border-border'
+        }`}
+      >
         <div className="p-4 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Ban className="w-4 h-4 text-rose-400" />

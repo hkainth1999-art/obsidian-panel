@@ -31,6 +31,7 @@ export class UsersService {
           email: true,
           isAdmin: true,
           language: true,
+          avatarUrl: true,
           totpEnabled: true,
           createdAt: true,
           updatedAt: true,
@@ -65,9 +66,38 @@ export class UsersService {
         email: true,
         isAdmin: true,
         language: true,
+        avatarUrl: true,
         totpEnabled: true,
         createdAt: true,
         updatedAt: true,
+        servers: {
+          select: {
+            id: true,
+            uuid: true,
+            uuidShort: true,
+            name: true,
+            status: true,
+            memory: true,
+            cpu: true,
+            disk: true,
+            node: { select: { id: true, name: true, fqdn: true } },
+            allocation: { select: { id: true, ip: true, port: true } },
+          },
+        },
+        subusers: {
+          include: {
+            server: {
+              select: {
+                id: true,
+                uuid: true,
+                uuidShort: true,
+                name: true,
+                status: true,
+                node: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -130,6 +160,7 @@ export class UsersService {
       password?: string;
       isAdmin?: boolean;
       language?: string;
+      avatarUrl?: string | null;
     },
   ) {
     await this.getUserById(id);
@@ -138,6 +169,7 @@ export class UsersService {
     if (dto.username) updateData.username = dto.username;
     if (dto.email) updateData.email = dto.email.toLowerCase();
     if (dto.language) updateData.language = dto.language;
+    if (typeof dto.avatarUrl !== 'undefined') updateData.avatarUrl = dto.avatarUrl;
     if (typeof dto.isAdmin === 'boolean') updateData.isAdmin = dto.isAdmin;
 
     if (dto.password) {
@@ -159,9 +191,72 @@ export class UsersService {
         email: true,
         isAdmin: true,
         language: true,
+        avatarUrl: true,
         updatedAt: true,
       },
     });
+  }
+
+  async updateProfile(userId: number, dto: { avatarUrl?: string | null; language?: string }) {
+    const updateData: any = {};
+    if (typeof dto.avatarUrl !== 'undefined') updateData.avatarUrl = dto.avatarUrl;
+    if (dto.language) updateData.language = dto.language;
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        uuid: true,
+        username: true,
+        email: true,
+        avatarUrl: true,
+        language: true,
+        isAdmin: true,
+      },
+    });
+  }
+
+  async transferServerOwnership(serverIdOrUuid: string | number, newOwnerId: number) {
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: newOwnerId },
+    });
+    if (!targetUser) {
+      throw new NotFoundException(`Target user ID ${newOwnerId} does not exist`);
+    }
+
+    const where = typeof serverIdOrUuid === 'number'
+      ? { id: serverIdOrUuid }
+      : (serverIdOrUuid.length === 36 ? { uuid: serverIdOrUuid } : { uuidShort: serverIdOrUuid });
+
+    const server = await this.prisma.server.findFirst({
+      where,
+      include: { node: true },
+    });
+    if (!server) {
+      throw new NotFoundException('Server not found');
+    }
+
+    // Remove new owner from subusers if they were previously a subuser
+    await this.prisma.subuser.deleteMany({
+      where: { serverId: server.id, userId: newOwnerId },
+    }).catch(() => {});
+
+    // Update server owner in database
+    const updated = await this.prisma.server.update({
+      where: { id: server.id },
+      data: { userId: newOwnerId },
+      include: {
+        owner: { select: { id: true, username: true, email: true } },
+        node: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Server "${server.name}" ownership transferred to ${targetUser.username}`,
+      server: updated,
+    };
   }
 
   async deleteUser(id: number, currentUserId: number) {

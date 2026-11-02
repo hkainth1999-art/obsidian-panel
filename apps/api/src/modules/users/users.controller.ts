@@ -56,6 +56,14 @@ export class UsersController {
     return this.usersService.createUser(dto);
   }
 
+  @Post('transfer-server')
+  @ApiOperation({ summary: 'Transfer server ownership to another user' })
+  async transferServer(
+    @Body() body: { serverIdOrUuid: string | number; newOwnerId: number },
+  ) {
+    return this.usersService.transferServerOwnership(body.serverIdOrUuid, Number(body.newOwnerId));
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Update an existing user' })
   async updateUser(
@@ -67,6 +75,7 @@ export class UsersController {
       password?: string;
       isAdmin?: boolean;
       language?: string;
+      avatarUrl?: string | null;
     },
   ) {
     return this.usersService.updateUser(id, dto);
@@ -76,5 +85,22 @@ export class UsersController {
   @ApiOperation({ summary: 'Delete a user' })
   async deleteUser(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     return this.usersService.deleteUser(id, req.user.id);
+  }
+}
+
+@ApiTags('User Profile')
+@ApiCookieAuth()
+@UseGuards(SessionGuard)
+@Controller('api/users')
+export class UserProfileController {
+  constructor(private readonly usersService: UsersService) {}
+
+  @Patch('profile')
+  @ApiOperation({ summary: 'Update logged-in user profile (avatar, language)' })
+  async updateProfile(
+    @Req() req: any,
+    @Body() dto: { avatarUrl?: string | null; language?: string },
+  ) {
+    return this.usersService.updateProfile(req.user.id, dto);
   }
 }

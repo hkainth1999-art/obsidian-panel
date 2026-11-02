@@ -84,6 +84,18 @@ export default function ServersPage() {
     }
   };
 
+  const getServerCardStyle = (status: string | null) => {
+    const s = status?.toLowerCase();
+    if (s === 'running' || s === 'online') {
+      return 'border-emerald-500/40 bg-surface/90 shadow-[inset_0_0_24px_rgba(34,197,94,0.18)] hover:border-emerald-500/70 hover:shadow-[inset_0_0_32px_rgba(34,197,94,0.28)]';
+    }
+    if (s === 'starting' || s === 'installing' || s === 'stopping') {
+      return 'border-amber-500/40 bg-surface/90 shadow-[inset_0_0_24px_rgba(234,179,8,0.18)] hover:border-amber-500/70 hover:shadow-[inset_0_0_32px_rgba(234,179,8,0.28)]';
+    }
+    // Offline / black card
+    return 'border-border/80 bg-[#090b0e] shadow-none hover:border-border-focus hover:bg-[#0d1014]';
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Action Bar */}
@@ -181,7 +193,7 @@ export default function ServersPage() {
               href={`/servers/${server.uuid}`}
               className="group block"
             >
-              <Card className="hover:border-border-focus hover:bg-surface-elevated/40 transition-all duration-200">
+              <Card className={`transition-all duration-300 ${getServerCardStyle(server.status)}`}>
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div>
                     <h4 className="text-sm font-semibold text-text-primary group-hover:text-primary transition-colors truncate">

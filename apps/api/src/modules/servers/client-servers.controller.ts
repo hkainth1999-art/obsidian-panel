@@ -540,6 +540,79 @@ export class ClientServersController {
   ) {
     return this.pluginsService.togglePlugin(uuid, body.fileName);
   }
+
+  // ─── Player Management ──────────────────────────────────────────────
+
+  @Get(':uuid/players')
+  @UseGuards(ServerAccessGuard)
+  @ApiOperation({ summary: 'Get operators, whitelist, banned players, and whitelist status' })
+  async getPlayers(@Param('uuid') uuid: string) {
+    return this.serversService.getPlayerData(uuid);
+  }
+
+  @Post(':uuid/players/op')
+  @UseGuards(ServerAccessGuard)
+  @RequirePermissions(Permission.CONTROL_CONSOLE)
+  @ApiOperation({ summary: 'Grant server operator (OP) status' })
+  async opPlayer(@Param('uuid') uuid: string, @Body() body: { name: string }) {
+    return this.serversService.opPlayer(uuid, body.name);
+  }
+
+  @Delete(':uuid/players/op/:name')
+  @UseGuards(ServerAccessGuard)
+  @RequirePermissions(Permission.CONTROL_CONSOLE)
+  @ApiOperation({ summary: 'Revoke server operator (OP) status' })
+  async deopPlayer(@Param('uuid') uuid: string, @Param('name') name: string) {
+    return this.serversService.deopPlayer(uuid, name);
+  }
+
+  @Post(':uuid/players/whitelist')
+  @UseGuards(ServerAccessGuard)
+  @RequirePermissions(Permission.CONTROL_CONSOLE)
+  @ApiOperation({ summary: 'Add player to whitelist' })
+  async addWhitelist(@Param('uuid') uuid: string, @Body() body: { name: string }) {
+    return this.serversService.addWhitelist(uuid, body.name);
+  }
+
+  @Delete(':uuid/players/whitelist/:name')
+  @UseGuards(ServerAccessGuard)
+  @RequirePermissions(Permission.CONTROL_CONSOLE)
+  @ApiOperation({ summary: 'Remove player from whitelist' })
+  async removeWhitelist(@Param('uuid') uuid: string, @Param('name') name: string) {
+    return this.serversService.removeWhitelist(uuid, name);
+  }
+
+  @Post(':uuid/players/whitelist/toggle')
+  @UseGuards(ServerAccessGuard)
+  @RequirePermissions(Permission.CONTROL_CONSOLE)
+  @ApiOperation({ summary: 'Toggle server whitelist ON or OFF' })
+  async toggleWhitelist(@Param('uuid') uuid: string, @Body() body: { enabled: boolean }) {
+    return this.serversService.toggleWhitelist(uuid, body.enabled);
+  }
+
+  @Post(':uuid/players/ban')
+  @UseGuards(ServerAccessGuard)
+  @RequirePermissions(Permission.CONTROL_CONSOLE)
+  @ApiOperation({ summary: 'Ban a player' })
+  async banPlayer(@Param('uuid') uuid: string, @Body() body: { name: string; reason?: string }) {
+    return this.serversService.banPlayer(uuid, body.name, body.reason);
+  }
+
+  @Post(':uuid/players/pardon')
+  @UseGuards(ServerAccessGuard)
+  @RequirePermissions(Permission.CONTROL_CONSOLE)
+  @ApiOperation({ summary: 'Pardon (unban) a player' })
+  async pardonPlayer(@Param('uuid') uuid: string, @Body() body: { name: string }) {
+    return this.serversService.pardonPlayer(uuid, body.name);
+  }
+
+  @Post(':uuid/players/kick')
+  @UseGuards(ServerAccessGuard)
+  @RequirePermissions(Permission.CONTROL_CONSOLE)
+  @ApiOperation({ summary: 'Kick an online player' })
+  async kickPlayer(@Param('uuid') uuid: string, @Body() body: { name: string; reason?: string }) {
+    return this.serversService.kickPlayer(uuid, body.name, body.reason);
+  }
 }
 
 

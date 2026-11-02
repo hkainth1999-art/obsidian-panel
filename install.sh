@@ -419,11 +419,7 @@ EOF
         fi
     elif [ ! -f "$INSTALL_DIR/package.json" ]; then
         echo -e "${GREEN}[*] Downloading Obsidian Panel codebase via Git...${NC}"
-        REPO_URL=${PANEL_REPO_URL:-""}
-        if [ -z "$REPO_URL" ]; then
-            read_input "Enter Obsidian Panel Git Repository URL [default: https://github.com/hkainth1999-art/obsidian-panel.git]: " INPUT_REPO_URL
-            REPO_URL=${INPUT_REPO_URL:-"https://github.com/hkainth1999-art/obsidian-panel.git"}
-        fi
+        REPO_URL=${PANEL_REPO_URL:-"https://github.com/hkainth1999-art/obsidian-panel.git"}
         echo -e "${GREEN}[*] Cloning from ${REPO_URL}...${NC}"
         git clone "$REPO_URL" "$INSTALL_DIR" || {
             echo -e "${RED}[ERROR] Failed to clone repository from $REPO_URL.${NC}"

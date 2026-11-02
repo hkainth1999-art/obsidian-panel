@@ -1247,5 +1247,188 @@ export class ServersService {
       this.logger.warn(`Error during auto-suspension sweep: ${e.message}`);
     }
   }
+
+  // ─── Admin Full Server Reconfiguration ──────────────────────────────
+
+  async adminUpdateServer(
+    uuid: string,
+    dto: {
+      name?: string;
+      description?: string;
+      ownerId?: number;
+      nodeId?: number;
+      memory?: number;
+      swap?: number;
+      cpu?: number;
+      disk?: number;
+      io?: number;
+      threads?: string;
+      databases?: number;
+      allocationsLimit?: number;
+      backups?: number;
+      autoSuspendDate?: string | null;
+    },
+  ) {
+    const server = await this.getServerByUuid(uuid);
+
+    const updateData: any = {};
+    if (dto.name && dto.name.trim()) updateData.name = dto.name.trim();
+
+    if (typeof dto.description !== 'undefined' || typeof dto.autoSuspendDate !== 'undefined') {
+      const cleanDesc = (dto.description ?? server.description ?? '').replace(/\s*\[suspend:[^\]]+\]\s*/g, '').trim();
+      const suspendTag = dto.autoSuspendDate ? ` [suspend:${dto.autoSuspendDate}]` : '';
+      updateData.description = `${cleanDesc}${suspendTag}`.trim();
+    }
+
+    if (typeof dto.ownerId === 'number' && dto.ownerId !== server.userId) {
+      const user = await this.prisma.user.findUnique({ where: { id: dto.ownerId } });
+      if (!user) throw new NotFoundException(`User with ID ${dto.ownerId} not found`);
+      updateData.userId = dto.ownerId;
+      await this.prisma.subuser.deleteMany({
+        where: { serverId: server.id, userId: dto.ownerId },
+      }).catch(() => {});
+    }
+
+    if (typeof dto.nodeId === 'number') updateData.nodeId = dto.nodeId;
+    if (typeof dto.memory === 'number') updateData.memory = dto.memory;
+    if (typeof dto.swap === 'number') updateData.swap = dto.swap;
+    if (typeof dto.cpu === 'number') updateData.cpu = dto.cpu;
+    if (typeof dto.disk === 'number') updateData.disk = dto.disk;
+    if (typeof dto.io === 'number') updateData.io = dto.io;
+    if (typeof dto.threads !== 'undefined') updateData.threads = dto.threads;
+    if (typeof dto.databases === 'number') updateData.databaseLimit = dto.databases;
+    if (typeof dto.allocationsLimit === 'number') updateData.allocationLimit = dto.allocationsLimit;
+    if (typeof dto.backups === 'number') updateData.backupLimit = dto.backups;
+
+    const updated = await this.prisma.server.update({
+      where: { id: server.id },
+      data: updateData,
+      include: {
+        node: true,
+        owner: { select: { id: true, username: true, email: true } },
+        allocation: true,
+        allocations: true,
+      },
+    });
+
+    // Sync updated build limits & configuration to Wings daemon
+    try {
+      const client = this.getWingsClient(updated.node);
+      await client.syncServer(updated.uuid);
+    } catch (err: any) {
+      this.logger.warn(`Failed to sync server ${updated.uuid} to Wings after admin update: ${err.message}`);
+    }
+
+    return updated;
+  }
+
+  // ─── Minecraft Player Management ────────────────────────────────────
+
+  async getPlayerData(uuid: string) {
+    const server = await this.getServerByUuid(uuid);
+    const client = this.getWingsClient(server.node);
+
+    let ops: any[] = [];
+    let whitelist: any[] = [];
+    let bannedPlayers: any[] = [];
+    let whitelistEnabled = false;
+
+    // Read ops.json
+    try {
+      const opsContent = await client.getFileContents(server.uuid, 'ops.json');
+      ops = JSON.parse(opsContent);
+    } catch {
+      ops = [];
+    }
+
+    // Read whitelist.json
+    try {
+      const wlContent = await client.getFileContents(server.uuid, 'whitelist.json');
+      whitelist = JSON.parse(wlContent);
+    } catch {
+      whitelist = [];
+    }
+
+    // Read banned-players.json
+    try {
+      const banContent = await client.getFileContents(server.uuid, 'banned-players.json');
+      bannedPlayers = JSON.parse(banContent);
+    } catch {
+      bannedPlayers = [];
+    }
+
+    // Read server.properties to check white-list status
+    try {
+      const props = await client.getFileContents(server.uuid, 'server.properties');
+      whitelistEnabled = /^\s*white-list\s*=\s*true/im.test(props);
+    } catch {
+      whitelistEnabled = false;
+    }
+
+    return {
+      ops,
+      whitelist,
+      bannedPlayers,
+      whitelistEnabled,
+    };
+  }
+
+  async opPlayer(uuid: string, name: string) {
+    const server = await this.getServerByUuid(uuid);
+    const client = this.getWingsClient(server.node);
+    await client.sendCommands(server.uuid, [`op ${name.trim()}`]);
+    return { success: true, message: `Granted operator status to ${name}` };
+  }
+
+  async deopPlayer(uuid: string, name: string) {
+    const server = await this.getServerByUuid(uuid);
+    const client = this.getWingsClient(server.node);
+    await client.sendCommands(server.uuid, [`deop ${name.trim()}`]);
+    return { success: true, message: `Revoked operator status from ${name}` };
+  }
+
+  async addWhitelist(uuid: string, name: string) {
+    const server = await this.getServerByUuid(uuid);
+    const client = this.getWingsClient(server.node);
+    await client.sendCommands(server.uuid, [`whitelist add ${name.trim()}`]);
+    return { success: true, message: `Added ${name} to whitelist` };
+  }
+
+  async removeWhitelist(uuid: string, name: string) {
+    const server = await this.getServerByUuid(uuid);
+    const client = this.getWingsClient(server.node);
+    await client.sendCommands(server.uuid, [`whitelist remove ${name.trim()}`]);
+    return { success: true, message: `Removed ${name} from whitelist` };
+  }
+
+  async toggleWhitelist(uuid: string, enabled: boolean) {
+    const server = await this.getServerByUuid(uuid);
+    const client = this.getWingsClient(server.node);
+    await client.sendCommands(server.uuid, [enabled ? 'whitelist on' : 'whitelist off']);
+    return { success: true, enabled, message: `Whitelist ${enabled ? 'enabled' : 'disabled'}` };
+  }
+
+  async banPlayer(uuid: string, name: string, reason?: string) {
+    const server = await this.getServerByUuid(uuid);
+    const client = this.getWingsClient(server.node);
+    const cmd = reason && reason.trim() ? `ban ${name.trim()} ${reason.trim()}` : `ban ${name.trim()}`;
+    await client.sendCommands(server.uuid, [cmd]);
+    return { success: true, message: `Banned player ${name}` };
+  }
+
+  async pardonPlayer(uuid: string, name: string) {
+    const server = await this.getServerByUuid(uuid);
+    const client = this.getWingsClient(server.node);
+    await client.sendCommands(server.uuid, [`pardon ${name.trim()}`]);
+    return { success: true, message: `Pardoned player ${name}` };
+  }
+
+  async kickPlayer(uuid: string, name: string, reason?: string) {
+    const server = await this.getServerByUuid(uuid);
+    const client = this.getWingsClient(server.node);
+    const cmd = reason && reason.trim() ? `kick ${name.trim()} ${reason.trim()}` : `kick ${name.trim()}`;
+    await client.sendCommands(server.uuid, [cmd]);
+    return { success: true, message: `Kicked player ${name}` };
+  }
 }
 

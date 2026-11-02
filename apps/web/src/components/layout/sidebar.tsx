@@ -49,6 +49,7 @@ export function Sidebar() {
     { label: 'Overview', href: '/admin', icon: LayoutDashboard },
     { label: 'Servers', href: '/admin/servers', icon: Server },
     { label: 'Users', href: '/admin/users', icon: UserIcon },
+    { label: 'Credentials', href: '/admin/credentials', icon: Key },
     { label: 'Locations', href: '/admin/locations', icon: MapPin },
     { label: 'Nodes', href: '/admin/nodes', icon: HardDrive },
     { label: 'Allocations', href: '/admin/allocations', icon: Network },
@@ -65,9 +66,10 @@ export function Sidebar() {
     ? [
         { label: 'Console', href: `/servers/${serverUuid}`, icon: Terminal, exact: true },
         { label: 'Files', href: `/servers/${serverUuid}/files`, icon: FolderOpen },
+        { label: 'Players', href: `/servers/${serverUuid}/players`, icon: Users },
         { label: 'Databases', href: `/servers/${serverUuid}/databases`, icon: Database },
         { label: 'Schedules', href: `/servers/${serverUuid}/schedules`, icon: Calendar },
-        { label: 'Users', href: `/servers/${serverUuid}/users`, icon: Users },
+        { label: 'Users', href: `/servers/${serverUuid}/users`, icon: UserIcon },
         { label: 'Backups', href: `/servers/${serverUuid}/backups`, icon: Archive },
         { label: 'Network', href: `/servers/${serverUuid}/network`, icon: Network },
         { label: 'Startup', href: `/servers/${serverUuid}/startup`, icon: Play },
@@ -196,19 +198,27 @@ export function Sidebar() {
       {/* User Footer Profile */}
       <div className="p-3 border-t border-border bg-surface">
         <div className="flex items-center justify-between p-2 rounded-control bg-surface-elevated border border-border">
-          <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="w-8 h-8 rounded-lg bg-surface border border-border flex items-center justify-center font-mono text-xs font-bold text-primary shrink-0">
-              {user?.username ? user.username.slice(0, 2).toUpperCase() : 'U'}
+          <Link href="/account" className="flex items-center gap-2.5 overflow-hidden group">
+            <div className="w-8 h-8 rounded-lg bg-surface border border-border flex items-center justify-center font-mono text-xs font-bold text-primary shrink-0 overflow-hidden group-hover:border-primary/50 transition-colors">
+              {user?.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.username}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                user?.username ? user.username.slice(0, 2).toUpperCase() : 'U'
+              )}
             </div>
             <div className="truncate">
-              <p className="text-xs font-medium text-text-primary truncate">
+              <p className="text-xs font-medium text-text-primary group-hover:text-primary transition-colors truncate">
                 {user?.username || 'Loading...'}
               </p>
               <p className="text-[10px] text-text-muted truncate">
                 {user?.isAdmin ? 'Administrator' : 'Customer'}
               </p>
             </div>
-          </div>
+          </Link>
           <button
             onClick={() => logout()}
             title="Log Out"

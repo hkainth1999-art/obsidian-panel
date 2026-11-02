@@ -10,6 +10,7 @@ export interface User {
   email: string;
   isAdmin: boolean;
   language: string;
+  avatarUrl?: string | null;
   totpEnabled: boolean;
   emailVerifiedAt?: string | null;
 }

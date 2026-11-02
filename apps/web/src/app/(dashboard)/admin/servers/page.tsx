@@ -23,6 +23,9 @@ import {
   Filter,
   PauseCircle,
   PlayCircle,
+  ArrowRightLeft,
+  Users,
+  Check,
 } from 'lucide-react';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
@@ -49,6 +52,42 @@ export default function AdminServersPage() {
   // Manage Allocations for an existing server
   const [manageAllocationsServer, setManageAllocationsServer] = useState<any | null>(null);
   const [newAllocationId, setNewAllocationId] = useState<number | null>(null);
+
+  // Full Server Configuration & Resource Manager Modal
+  const [configServer, setConfigServer] = useState<any | null>(null);
+  const [configTab, setConfigTab] = useState<'resources' | 'features' | 'owner' | 'ports' | 'subusers'>('resources');
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editMemory, setEditMemory] = useState(2048);
+  const [editCpu, setEditCpu] = useState(100);
+  const [editDisk, setEditDisk] = useState(10240);
+  const [editSwap, setEditSwap] = useState(0);
+  const [editIo, setEditIo] = useState(500);
+  const [editDatabases, setEditDatabases] = useState(0);
+  const [editAllocationsLimit, setEditAllocationsLimit] = useState(0);
+  const [editBackups, setEditBackups] = useState(0);
+  const [editOwnerId, setEditOwnerId] = useState<number | null>(null);
+  const [editNodeId, setEditNodeId] = useState<number | null>(null);
+  const [editSubuserEmail, setEditSubuserEmail] = useState('');
+  const [newPortAllocationId, setNewPortAllocationId] = useState<number | null>(null);
+
+  const openServerConfigModal = (srv: any) => {
+    setConfigServer(srv);
+    setConfigTab('resources');
+    setEditName(srv.name || '');
+    setEditDescription(srv.description || '');
+    setEditMemory(srv.limits?.memory ?? srv.memory ?? 2048);
+    setEditCpu(srv.limits?.cpu ?? srv.cpu ?? 100);
+    setEditDisk(srv.limits?.disk ?? srv.disk ?? 10240);
+    setEditSwap(srv.limits?.swap ?? srv.swap ?? 0);
+    setEditIo(srv.limits?.io ?? srv.io ?? 500);
+    setEditDatabases(srv.databaseLimit ?? 0);
+    setEditAllocationsLimit(srv.allocationLimit ?? 0);
+    setEditBackups(srv.backupLimit ?? 0);
+    setEditOwnerId(srv.owner?.id ?? srv.userId ?? null);
+    setEditNodeId(srv.nodeId ?? null);
+    setEditSubuserEmail('');
+  };
 
   // Startup & Docker state (Java 25 default)
   const [startup, setStartup] = useState('');
@@ -244,6 +283,99 @@ export default function AdminServersPage() {
     onError: (err: any) => {
       alert(`Failed to set primary allocation: ${err.message}`);
     },
+  });
+
+  // Full Server Details Query
+  const {
+    data: configServerDetails,
+    isLoading: isConfigDetailsLoading,
+    refetch: refetchConfigServerDetails,
+  } = useQuery<any>({
+    queryKey: ['admin-server-details', configServer?.uuid],
+    queryFn: () => fetchApi(`/api/admin/servers/${configServer.uuid}`),
+    enabled: !!configServer?.uuid,
+  });
+
+  // Server Allocations Query for Config Modal
+  const {
+    data: configAllocationsData,
+    isLoading: isConfigAllocationsLoading,
+    refetch: refetchConfigAllocations,
+  } = useQuery<any>({
+    queryKey: ['admin-config-allocations', configServer?.uuid],
+    queryFn: () => fetchApi(`/api/admin/servers/${configServer.uuid}/allocations`),
+    enabled: !!configServer?.uuid,
+  });
+
+  const saveServerConfigMutation = useMutation({
+    mutationFn: (data: any) =>
+      fetchApi(`/api/admin/servers/${configServer.uuid}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-servers'] });
+      queryClient.invalidateQueries({ queryKey: ['client-servers'] });
+      refetchConfigServerDetails();
+      alert('Server configuration and build limits saved & synced to Wings daemon!');
+    },
+    onError: (err: any) => {
+      alert(`Failed to save server configuration: ${err.message}`);
+    },
+  });
+
+  const addConfigSubuserMutation = useMutation({
+    mutationFn: (email: string) =>
+      fetchApi(`/api/admin/servers/${configServer.uuid}/subusers`, {
+        method: 'POST',
+        body: JSON.stringify({ email, permissions: ['*'] }),
+      }),
+    onSuccess: () => {
+      setEditSubuserEmail('');
+      refetchConfigServerDetails();
+      alert('User successfully added as subuser!');
+    },
+    onError: (err: any) => alert(`Failed to add user: ${err.message}`),
+  });
+
+  const removeConfigSubuserMutation = useMutation({
+    mutationFn: (subuserId: number) =>
+      fetchApi(`/api/admin/servers/${configServer.uuid}/subusers/${subuserId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      refetchConfigServerDetails();
+      alert('Subuser removed from server.');
+    },
+    onError: (err: any) => alert(`Failed to remove subuser: ${err.message}`),
+  });
+
+  const assignConfigPortMutation = useMutation({
+    mutationFn: (allocationId: number) =>
+      fetchApi(`/api/admin/servers/${configServer.uuid}/allocations`, {
+        method: 'POST',
+        body: JSON.stringify({ allocationId }),
+      }),
+    onSuccess: () => {
+      setNewPortAllocationId(null);
+      refetchConfigAllocations();
+      queryClient.invalidateQueries({ queryKey: ['admin-servers'] });
+      alert('Port allocated and synced to Wings daemon!');
+    },
+    onError: (err: any) => alert(`Failed to assign port: ${err.message}`),
+  });
+
+  const unassignConfigPortMutation = useMutation({
+    mutationFn: (allocationId: number) =>
+      fetchApi(`/api/admin/servers/${configServer.uuid}/allocations/${allocationId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      refetchConfigAllocations();
+      queryClient.invalidateQueries({ queryKey: ['admin-servers'] });
+      alert('Port removed.');
+    },
+    onError: (err: any) => alert(`Failed to remove port: ${err.message}`),
   });
 
   const handleOpenModal = () => {
@@ -1072,19 +1204,21 @@ export default function AdminServersPage() {
             </thead>
             <tbody className="divide-y divide-border/50">
               {filteredServers?.map((server: any) => (
-                <tr key={server.uuid} className="hover:bg-surface-elevated/20 transition-colors">
+                <tr
+                  key={server.uuid}
+                  onClick={() => openServerConfigModal(server)}
+                  className="hover:bg-surface-elevated/30 transition-colors cursor-pointer group"
+                  title="Click to view & configure server hardware, owner, node, limits, and subusers"
+                >
                   <td className="px-5 py-3.5 font-medium text-text-primary">
                     <div className="flex items-center gap-2">
-                      <Server className="w-4 h-4 text-primary shrink-0" />
+                      <Server className="w-4 h-4 text-primary shrink-0 group-hover:scale-110 transition-transform" />
                       <div>
-                        <Link
-                          href={`/servers/${server.uuid}`}
-                          className="hover:text-primary transition-colors font-medium"
-                        >
+                        <span className="hover:text-primary transition-colors font-medium block">
                           {server.name}
-                        </Link>
+                        </span>
                         <span className="block text-[10px] font-mono text-text-muted">
-                          {server.uuidShort}
+                          {server.uuidShort} &bull; Click to configure
                         </span>
                       </div>
                     </div>
@@ -1103,7 +1237,10 @@ export default function AdminServersPage() {
                   <td className="px-5 py-3.5">
                     <button
                       type="button"
-                      onClick={() => setManageAllocationsServer(server)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setManageAllocationsServer(server);
+                      }}
                       className="font-mono text-[11px] text-left text-text-secondary hover:text-primary transition-colors flex items-center gap-1.5 group"
                       title="Click to manage allocations for this server"
                     >
@@ -1145,8 +1282,19 @@ export default function AdminServersPage() {
                     {formatMemory(server.limits.disk)}
                   </td>
                   <td className="px-5 py-3.5 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Link href={`/servers/${server.uuid}`}>
+                    <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openServerConfigModal(server);
+                        }}
+                        title="Configure Hardware Limits & Owner"
+                      >
+                        <Sliders className="w-3.5 h-3.5 mr-1" /> Config
+                      </Button>
+                      <Link href={`/servers/${server.uuid}`} onClick={(e) => e.stopPropagation()}>
                         <Button variant="secondary" size="sm">
                           Console <ExternalLink className="w-3.5 h-3.5 ml-1" />
                         </Button>
@@ -1154,7 +1302,10 @@ export default function AdminServersPage() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => setManageAllocationsServer(server)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setManageAllocationsServer(server);
+                        }}
                         className="text-cyan-400 hover:text-cyan-300 border-cyan-500/30"
                         title="Manage Port Allocations (Voice Chat UDP, Geyser, etc.)"
                       >
@@ -1165,7 +1316,10 @@ export default function AdminServersPage() {
                           variant="secondary"
                           size="sm"
                           disabled={suspendMutation.isPending}
-                          onClick={() => suspendMutation.mutate({ uuid: server.uuid, action: 'unsuspend' })}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            suspendMutation.mutate({ uuid: server.uuid, action: 'unsuspend' });
+                          }}
                           className="text-emerald-400 hover:text-emerald-300 border-emerald-500/30"
                           title="Unsuspend server"
                         >
@@ -1176,7 +1330,8 @@ export default function AdminServersPage() {
                           variant="secondary"
                           size="sm"
                           disabled={suspendMutation.isPending}
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             if (confirm(`Suspend server "${server.name}"? The container will be shut down.`)) {
                               suspendMutation.mutate({ uuid: server.uuid, action: 'suspend' });
                             }
@@ -1191,7 +1346,8 @@ export default function AdminServersPage() {
                         variant="danger"
                         size="sm"
                         disabled={deleteMutation.isPending}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           if (
                             confirm(
                               `Are you sure you want to permanently delete "${server.name}" (${server.uuidShort})?\n\nThis will remove the container, files, and allocations from Wings.`,
@@ -1362,6 +1518,526 @@ export default function AdminServersPage() {
             <div className="flex items-center justify-end pt-3 border-t border-border">
               <Button variant="secondary" size="sm" onClick={() => setManageAllocationsServer(null)}>
                 Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full Server Configuration & Hardware Limits Modal */}
+      {configServer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto">
+          <div className="w-full max-w-3xl bg-surface border border-border rounded-card p-6 space-y-5 my-8 shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-primary" />
+                  Server Configuration &amp; Limits Manager &mdash; {configServer.name}
+                </h3>
+                <p className="text-[11px] text-text-muted mt-0.5 font-mono">
+                  UUID: {configServer.uuid} &bull; Short: {configServer.uuidShort} &bull; Node: {configServer.node}
+                </p>
+              </div>
+              <button
+                onClick={() => setConfigServer(null)}
+                className="text-text-muted hover:text-text-primary text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex items-center gap-2 border-b border-border pb-2 text-xs">
+              <button
+                onClick={() => setConfigTab('resources')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-control font-medium transition-colors ${
+                  configTab === 'resources'
+                    ? 'bg-primary/10 text-primary border border-primary/30'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <Cpu className="w-3.5 h-3.5" />
+                <span>Hardware &amp; Limits</span>
+              </button>
+
+              <button
+                onClick={() => setConfigTab('features')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-control font-medium transition-colors ${
+                  configTab === 'features'
+                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Feature Limits &amp; Node</span>
+              </button>
+
+              <button
+                onClick={() => setConfigTab('owner')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-control font-medium transition-colors ${
+                  configTab === 'owner'
+                    ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                <span>Owner &amp; Transfer</span>
+              </button>
+
+              <button
+                onClick={() => setConfigTab('ports')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-control font-medium transition-colors ${
+                  configTab === 'ports'
+                    ? 'bg-primary/10 text-primary border border-primary/30'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <Network className="w-3.5 h-3.5" />
+                <span>Port Allocations</span>
+              </button>
+
+              <button
+                onClick={() => setConfigTab('subusers')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-control font-medium transition-colors ${
+                  configTab === 'subusers'
+                    ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Subusers ({configServerDetails?.subusers?.length || 0})</span>
+              </button>
+            </div>
+
+            {/* Tab 1: Hardware & Build Limits */}
+            {configTab === 'resources' && (
+              <div className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-text-secondary font-medium block mb-1">
+                      Server Memory / RAM Limit (MiB) *
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="128"
+                        step="128"
+                        value={editMemory}
+                        onChange={(e) => setEditMemory(Number(e.target.value))}
+                        className="flex-1 px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                      />
+                      <span className="px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-muted font-mono">
+                        {formatMemory(editMemory)}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-text-muted mt-1">
+                      RAM limit assigned to Docker container on Wings (0 for unlimited).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-text-secondary font-medium block mb-1">
+                      CPU Limit (%) *
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="50"
+                        value={editCpu}
+                        onChange={(e) => setEditCpu(Number(e.target.value))}
+                        className="flex-1 px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                      />
+                      <span className="px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-muted font-mono">
+                        {editCpu}%
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-text-muted mt-1">
+                      100% = 1 full thread core, 200% = 2 cores, 500% = 5 cores.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-text-secondary font-medium block mb-1">
+                      Disk Storage Limit (MiB) *
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min="512"
+                        step="1024"
+                        value={editDisk}
+                        onChange={(e) => setEditDisk(Number(e.target.value))}
+                        className="flex-1 px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                      />
+                      <span className="px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-muted font-mono">
+                        {formatMemory(editDisk)}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-text-muted mt-1">
+                      Maximum container filesystem storage allocated on host NVMe/SSD.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-text-secondary font-medium block mb-1">
+                      Swap Memory (MiB)
+                    </label>
+                    <input
+                      type="number"
+                      min="-1"
+                      step="128"
+                      value={editSwap}
+                      onChange={(e) => setEditSwap(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                    />
+                    <p className="text-[10px] text-text-muted mt-1">
+                      0 to disable swap, -1 for unlimited, or set specific swap in MiB.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-text-secondary font-medium block mb-1">
+                      Disk IO Weight (10 &ndash; 1000)
+                    </label>
+                    <input
+                      type="number"
+                      min="10"
+                      max="1000"
+                      value={editIo}
+                      onChange={(e) => setEditIo(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                    />
+                    <p className="text-[10px] text-text-muted mt-1">
+                      Relative disk IO priority compared to other containers (Default: 500).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-text-secondary font-medium block mb-1">
+                      Server Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Feature Limits & Node */}
+            {configTab === 'features' && (
+              <div className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-text-secondary font-medium block mb-1">
+                      Database Limit
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editDatabases}
+                      onChange={(e) => setEditDatabases(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                    />
+                    <p className="text-[10px] text-text-muted mt-1">
+                      Allowed external MySQL / Postgres databases.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-text-secondary font-medium block mb-1">
+                      Allocations Limit (Ports)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editAllocationsLimit}
+                      onChange={(e) => setEditAllocationsLimit(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                    />
+                    <p className="text-[10px] text-text-muted mt-1">
+                      Total number of ports this server may claim (0 for unlimited).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-text-secondary font-medium block mb-1">
+                      Backup Limit
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editBackups}
+                      onChange={(e) => setEditBackups(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                    />
+                    <p className="text-[10px] text-text-muted mt-1">
+                      Total server backups the user can create and store.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <label className="text-text-secondary font-medium block mb-1">
+                    Assigned Node
+                  </label>
+                  <select
+                    value={editNodeId || ''}
+                    onChange={(e) => setEditNodeId(e.target.value ? Number(e.target.value) : null)}
+                    className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                  >
+                    {nodes?.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.name} &bull; {n.fqdn} ({n.location?.name || 'Default'})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-text-muted mt-1">
+                    Node hosting this server instance. Changing node updates panel assignment.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 3: Owner & Transfer */}
+            {configTab === 'owner' && (
+              <div className="space-y-4 text-xs">
+                <div className="p-3.5 bg-surface-elevated/50 border border-border rounded-control space-y-2">
+                  <span className="font-semibold text-text-primary block">
+                    Current Server Owner
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-surface border border-border flex items-center justify-center font-mono font-bold text-primary">
+                      {configServer.owner?.username?.slice(0, 2).toUpperCase() || 'U'}
+                    </div>
+                    <div>
+                      <span className="font-bold text-text-primary block">
+                        {configServer.owner?.username || 'System'}
+                      </span>
+                      <span className="text-[11px] font-mono text-text-muted">
+                        {configServer.owner?.email || 'N/A'} (ID: #{configServer.owner?.id || configServer.userId})
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-surface-elevated/50 border border-border rounded-control space-y-3">
+                  <span className="font-semibold text-text-primary block flex items-center gap-1.5">
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-400" />
+                    Transfer Ownership to Another Account
+                  </span>
+                  <p className="text-[11px] text-text-muted">
+                    Select a registered user account to become the new owner of this server.
+                  </p>
+
+                  <select
+                    value={editOwnerId || ''}
+                    onChange={(e) => setEditOwnerId(e.target.value ? Number(e.target.value) : null)}
+                    className="w-full px-3 py-2 bg-surface border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                  >
+                    <option value="">-- Choose Account --</option>
+                    {users?.data?.map((u: any) => (
+                      <option key={u.id} value={u.id}>
+                        {u.username} ({u.email}) &bull; #{u.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 4: Port Allocations */}
+            {configTab === 'ports' && (
+              <div className="space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-text-primary">
+                    Assigned Ports &amp; UDP Bindings ({configAllocationsData?.assigned?.length || 0})
+                  </span>
+                  <span className="text-[10px] text-cyan-400 font-mono">Dual TCP &amp; UDP mapped</span>
+                </div>
+
+                {isConfigAllocationsLoading ? (
+                  <div className="p-6 text-center text-xs text-text-muted">Loading allocations...</div>
+                ) : (
+                  <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                    {configAllocationsData?.assigned?.map((alloc: any) => {
+                      const isPrimary = alloc.id === configAllocationsData?.primary?.id;
+                      return (
+                        <div
+                          key={alloc.id}
+                          className={`flex items-center justify-between p-2.5 rounded-control border ${
+                            isPrimary ? 'bg-primary/5 border-primary/30' : 'bg-surface-elevated/40 border-border'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Network className={`w-3.5 h-3.5 ${isPrimary ? 'text-primary' : 'text-text-muted'}`} />
+                            <span className="font-mono text-xs font-bold text-text-primary">
+                              {alloc.ip}:{alloc.port} {alloc.alias ? `(${alloc.alias})` : ''}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {isPrimary ? (
+                              <Badge variant="info" className="text-[9px]">PRIMARY</Badge>
+                            ) : (
+                              <>
+                                <Badge variant="default" className="text-[9px]">SECONDARY</Badge>
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  disabled={unassignConfigPortMutation.isPending}
+                                  onClick={() => {
+                                    if (confirm(`Remove allocation ${alloc.ip}:${alloc.port}?`)) {
+                                      unassignConfigPortMutation.mutate(alloc.id);
+                                    }
+                                  }}
+                                  className="text-[10px] py-0.5 px-1.5"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Add Allocation to Server */}
+                <div className="pt-2 border-t border-border flex items-center gap-2">
+                  <select
+                    value={newPortAllocationId || ''}
+                    onChange={(e) => setNewPortAllocationId(e.target.value ? Number(e.target.value) : null)}
+                    className="flex-1 px-3 py-1.5 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                  >
+                    <option value="">-- Assign new port from node --</option>
+                    {(configAllocationsData?.unassigned || []).map((a: any) => (
+                      <option key={a.id} value={a.id}>
+                        {a.ip}:{a.port} {a.alias ? `(${a.alias})` : ''}
+                      </option>
+                    ))}
+                  </select>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={!newPortAllocationId || assignConfigPortMutation.isPending}
+                    onClick={() => {
+                      if (newPortAllocationId) {
+                        assignConfigPortMutation.mutate(newPortAllocationId);
+                      }
+                    }}
+                  >
+                    + Assign Port
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 5: Subusers */}
+            {configTab === 'subusers' && (
+              <div className="space-y-4 text-xs">
+                {/* Add Subuser input */}
+                <div className="p-3 bg-surface-elevated/50 border border-border rounded-control space-y-2">
+                  <span className="font-semibold text-text-primary block">
+                    Add User to this Server
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      placeholder="Enter registered user email address..."
+                      value={editSubuserEmail}
+                      onChange={(e) => setEditSubuserEmail(e.target.value)}
+                      className="flex-1 px-3 py-1.5 bg-surface border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                    />
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={!editSubuserEmail.trim() || addConfigSubuserMutation.isPending}
+                      onClick={() => addConfigSubuserMutation.mutate(editSubuserEmail.trim())}
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1" />
+                      {addConfigSubuserMutation.isPending ? 'Adding...' : 'Add User'}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Subusers list */}
+                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                  {(configServerDetails?.subusers || []).length === 0 ? (
+                    <div className="p-6 text-center text-xs text-text-muted">
+                      No additional subusers assigned to this server yet.
+                    </div>
+                  ) : (
+                    configServerDetails.subusers.map((sub: any) => (
+                      <div
+                        key={sub.id}
+                        className="flex items-center justify-between p-2.5 rounded-control bg-surface-elevated/40 border border-border"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-surface border border-border flex items-center justify-center font-mono text-xs font-bold text-primary">
+                            {sub.user?.username?.slice(0, 2).toUpperCase() || 'U'}
+                          </div>
+                          <div>
+                            <span className="font-bold text-text-primary block">{sub.user?.username}</span>
+                            <span className="text-[10px] text-text-muted font-mono">{sub.user?.email}</span>
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          disabled={removeConfigSubuserMutation.isPending}
+                          onClick={() => {
+                            if (confirm(`Remove subuser ${sub.user?.username} from this server?`)) {
+                              removeConfigSubuserMutation.mutate(sub.id);
+                            }
+                          }}
+                          className="text-[10px] py-1 px-2"
+                        >
+                          <Trash2 className="w-3 h-3 mr-1" /> Remove
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Modal Action Buttons */}
+            <div className="flex items-center justify-between pt-3 border-t border-border">
+              <Button variant="secondary" size="sm" onClick={() => setConfigServer(null)}>
+                Cancel
+              </Button>
+
+              <Button
+                variant="primary"
+                size="md"
+                disabled={saveServerConfigMutation.isPending}
+                onClick={() => {
+                  saveServerConfigMutation.mutate({
+                    name: editName,
+                    memory: editMemory,
+                    cpu: editCpu,
+                    disk: editDisk,
+                    swap: editSwap,
+                    io: editIo,
+                    databases: editDatabases,
+                    allocationsLimit: editAllocationsLimit,
+                    backups: editBackups,
+                    ownerId: editOwnerId || undefined,
+                    nodeId: editNodeId || undefined,
+                  });
+                }}
+              >
+                <Check className="w-4 h-4 mr-1.5" />
+                {saveServerConfigMutation.isPending ? 'Syncing to Wings...' : 'Save & Sync to Wings'}
               </Button>
             </div>
           </div>
