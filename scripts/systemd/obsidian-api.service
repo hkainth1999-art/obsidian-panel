@@ -1,0 +1,29 @@
+[Unit]
+Description=Obsidian Panel API Daemon (Control Plane)
+Documentation=https://github.com/obsidian-panel/panel
+After=network.target postgresql.service redis.service
+Requires=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/obsidian
+Environment=NODE_ENV=production
+EnvironmentFile=/var/www/obsidian/.env
+ExecStart=/usr/bin/node /var/www/obsidian/apps/api/dist/main.js
+
+# Crash auto-recovery & restart policy (Pterodactyl-style)
+Restart=always
+RestartSec=3s
+StartLimitInterval=180s
+StartLimitBurst=30
+
+# File descriptor limits
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=obsidian-api
+
+[Install]
+WantedBy=multi-user.target

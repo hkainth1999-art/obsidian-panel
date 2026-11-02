@@ -1,0 +1,542 @@
+// Obsidian Panel — Database Schema
+// PostgreSQL via Prisma ORM
+//
+// This schema defines the Panel's own application data.
+// Customer MySQL/MariaDB databases are a separate subsystem.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ───────────────────────────────────────────────────────────
+
+model User {
+  id                Int       @id @default(autoincrement())
+  uuid              String    @unique @default(uuid()) @db.Uuid
+  externalId        String?   @unique @map("external_id")
+  username          String    @unique
+  email             String    @unique
+  password          String    // Argon2id hash
+  isAdmin           Boolean   @default(false) @map("is_admin")
+  language          String    @default("en")
+  totpSecret        String?   @map("totp_secret") // Encrypted at rest
+  totpEnabled       Boolean   @default(false) @map("totp_enabled")
+  totpRecoveryCodes String?   @map("totp_recovery_codes") // Encrypted at rest, JSON array of hashed codes
+  emailVerifiedAt   DateTime? @map("email_verified_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  sessions       Session[]
+  apiKeys        ApiKey[]
+  servers        Server[]       @relation("ServerOwner")
+  subusers       Subuser[]
+  auditLogs      AuditLog[]
+  activityLogs   ActivityLog[]
+
+  @@map("users")
+}
+
+model Session {
+  id          String   @id @default(uuid())
+  userId      Int      @map("user_id")
+  tokenHash   String   @unique @map("token_hash") // SHA-256 of session token
+  ipAddress   String   @map("ip_address")
+  userAgent   String   @map("user_agent") @db.Text
+  lastActive  DateTime @default(now()) @map("last_active")
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model ApiKey {
+  id          Int       @id @default(autoincrement())
+  identifier  String    @unique // First 16 chars, for display
+  tokenHash   String    @unique @map("token_hash") // SHA-256 of full token
+  userId      Int       @map("user_id")
+  description String
+  allowedIps  String[]  @default([]) @map("allowed_ips")
+  lastUsedAt  DateTime? @map("last_used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_keys")
+}
+
+model PasswordReset {
+  id        Int      @id @default(autoincrement())
+  email     String
+  tokenHash String   @unique @map("token_hash") // SHA-256 of reset token
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([email])
+  @@map("password_resets")
+}
+
+// ─── Locations ───────────────────────────────────────────────────────
+
+model Location {
+  id        Int      @id @default(autoincrement())
+  short     String   @unique
+  long      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  nodes Node[]
+
+  @@map("locations")
+}
+
+// ─── Nodes ───────────────────────────────────────────────────────────
+
+model Node {
+  id                  Int      @id @default(autoincrement())
+  uuid                String   @unique @default(uuid()) @db.Uuid
+  name                String
+  description         String   @default("")
+  locationId          Int      @map("location_id")
+  fqdn                String
+  scheme              String   @default("https") // "https" or "http"
+  behindProxy         Boolean  @default(false) @map("behind_proxy")
+  maintenanceMode     Boolean  @default(false) @map("maintenance_mode")
+  memory              Int      // Total MiB
+  memoryOverallocate  Int      @default(0) @map("memory_overallocate")
+  disk                Int      // Total MiB
+  diskOverallocate    Int      @default(0) @map("disk_overallocate")
+  uploadSize          Int      @default(100) @map("upload_size") // MiB
+  daemonTokenId       String   @unique @map("daemon_token_id")
+  daemonToken         String   @map("daemon_token") // Encrypted at rest
+  daemonPort          Int      @default(8080) @map("daemon_port")
+  daemonSftpPort      Int      @default(2022) @map("daemon_sftp_port")
+  daemonBase          String   @default("/var/lib/pterodactyl") @map("daemon_base")
+  daemonSftpAlias     String?  @map("daemon_sftp_alias")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  location    Location     @relation(fields: [locationId], references: [id])
+  allocations Allocation[]
+  servers     Server[]
+  mounts      MountNode[]
+
+  @@index([locationId])
+  @@map("nodes")
+}
+
+// ─── Allocations ─────────────────────────────────────────────────────
+
+model Allocation {
+  id        Int      @id @default(autoincrement())
+  nodeId    Int      @map("node_id")
+  ip        String
+  alias     String?
+  port      Int
+  notes     String?
+  serverId  Int?     @map("server_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  node   Node    @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  server Server? @relation("ServerAssignedAllocations", fields: [serverId], references: [id], onDelete: SetNull)
+  primaryForServers Server[] @relation("ServerPrimaryAllocation")
+
+  @@unique([nodeId, ip, port])
+  @@index([nodeId])
+  @@index([serverId])
+  @@map("allocations")
+}
+
+// ─── Nests & Eggs ────────────────────────────────────────────────────
+
+model Nest {
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique @default(uuid()) @db.Uuid
+  name        String   @unique
+  description String   @default("")
+  author      String   @default("unknown@example.com")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  eggs    Egg[]
+  servers Server[]
+
+  @@map("nests")
+}
+
+model Egg {
+  id                Int      @id @default(autoincrement())
+  uuid              String   @unique @default(uuid()) @db.Uuid
+  nestId            Int      @map("nest_id")
+  name              String
+  description       String   @default("")
+  author            String
+  dockerImages      Json     @map("docker_images") // Record<string, string>
+  startup           String   @db.Text
+  stopCommand       String?  @map("stop_command")
+  configStartup     Json?    @map("config_startup") // ProcessConfiguration.startup
+  configStop        Json?    @map("config_stop")     // ProcessConfiguration.stop
+  configFiles       String?  @map("config_files") @db.Text // JSON string
+  configLogs        String?  @map("config_logs") @db.Text
+  scriptContainer   String   @default("debian:stable-slim") @map("script_container")
+  scriptEntry       String   @default("bash") @map("script_entry")
+  scriptInstall     String?  @map("script_install") @db.Text
+  fileDenylist      String[] @default([]) @map("file_denylist")
+  forceOutgoingIp   Boolean  @default(false) @map("force_outgoing_ip")
+  features          String[] @default([])
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  nest      Nest          @relation(fields: [nestId], references: [id])
+  variables EggVariable[]
+  servers   Server[]
+
+  @@index([nestId])
+  @@map("eggs")
+}
+
+model EggVariable {
+  id           Int      @id @default(autoincrement())
+  eggId        Int      @map("egg_id")
+  name         String
+  description  String   @default("")
+  envVariable  String   @map("env_variable")
+  defaultValue String   @default("") @map("default_value")
+  userViewable Boolean  @default(false) @map("user_viewable")
+  userEditable Boolean  @default(false) @map("user_editable")
+  rules        String   @default("required|string") // Laravel-style validation
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  egg                 Egg                  @relation(fields: [eggId], references: [id], onDelete: Cascade)
+  serverVariableValues ServerVariable[]
+
+  @@unique([eggId, envVariable])
+  @@map("egg_variables")
+}
+
+// ─── Servers ─────────────────────────────────────────────────────────
+
+model Server {
+  id                Int       @id @default(autoincrement())
+  uuid              String    @unique @default(uuid()) @db.Uuid
+  uuidShort         String    @unique @map("uuid_short") // First 8 chars of UUID
+  externalId        String?   @unique @map("external_id")
+  name              String
+  description       String    @default("")
+  status            String?   // null = normal, "installing", "install_failed", "suspended", "restoring", "transferring"
+  userId            Int       @map("user_id")
+  nodeId            Int       @map("node_id")
+  allocationId      Int       @map("allocation_id")
+  nestId            Int       @map("nest_id")
+  eggId             Int       @map("egg_id")
+  skipScripts       Boolean   @default(false) @map("skip_scripts")
+  dockerImage       String    @map("docker_image")
+  startup           String    @db.Text
+  memory            Int       // MiB
+  swap              Int       @default(0) // MiB
+  disk              Int       // MiB
+  io                Int       @default(500) // 10-1000
+  cpu               Int       @default(0) // Percentage
+  threads           String?   // CPU pinning
+  oomDisabled       Boolean   @default(false) @map("oom_disabled")
+  databaseLimit     Int       @default(0) @map("database_limit")
+  allocationLimit   Int       @default(0) @map("allocation_limit")
+  backupLimit       Int       @default(0) @map("backup_limit")
+  installedAt       DateTime? @map("installed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  owner           User             @relation("ServerOwner", fields: [userId], references: [id])
+  node            Node             @relation(fields: [nodeId], references: [id])
+  allocation      Allocation       @relation("ServerPrimaryAllocation", fields: [allocationId], references: [id])
+  nest            Nest?            @relation(fields: [nestId], references: [id])
+  egg             Egg              @relation(fields: [eggId], references: [id])
+  allocations     Allocation[]     @relation("ServerAssignedAllocations")
+  variables       ServerVariable[]
+  subusers        Subuser[]
+  databases       ServerDatabase[]
+  backups         Backup[]
+  schedules       Schedule[]
+  activityLogs    ActivityLog[]
+  mounts          ServerMount[]
+  transferLogs    TransferLog[]
+
+  // This self-referencing relation is for the allocation FK.
+  // Prisma requires explicit disambiguation.
+  @@index([userId])
+  @@index([nodeId])
+  @@index([allocationId])
+  @@index([eggId])
+  @@map("servers")
+}
+
+model ServerVariable {
+  id            Int    @id @default(autoincrement())
+  serverId      Int    @map("server_id")
+  variableId    Int    @map("variable_id")
+  variableValue String @map("variable_value") @db.Text
+
+  server   Server      @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  variable EggVariable @relation(fields: [variableId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, variableId])
+  @@map("server_variables")
+}
+
+// ─── Subusers ────────────────────────────────────────────────────────
+
+model Subuser {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  serverId    Int      @map("server_id")
+  permissions String[] // Array of permission strings
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serverId])
+  @@map("subusers")
+}
+
+// ─── Databases ───────────────────────────────────────────────────────
+
+model DatabaseHost {
+  id            Int      @id @default(autoincrement())
+  name          String
+  host          String
+  port          Int      @default(3306)
+  username      String   // Provisioning account (encrypted at rest)
+  password      String   // Provisioning password (encrypted at rest)
+  maxDatabases  Int?     @map("max_databases")
+  nodeId        Int?     @map("node_id") // Optional node restriction
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  databases ServerDatabase[]
+
+  @@map("database_hosts")
+}
+
+model ServerDatabase {
+  id             Int      @id @default(autoincrement())
+  serverId       Int      @map("server_id")
+  databaseHostId Int      @map("database_host_id")
+  database       String   // Database name
+  username       String   // Database user
+  password       String   // User password (encrypted at rest)
+  remoteHost     String   @default("%") @map("remote_host")
+  maxConnections Int?     @map("max_connections")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  server       Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  databaseHost DatabaseHost @relation(fields: [databaseHostId], references: [id])
+
+  @@unique([databaseHostId, database])
+  @@unique([databaseHostId, username])
+  @@index([serverId])
+  @@map("server_databases")
+}
+
+// ─── Backups ─────────────────────────────────────────────────────────
+
+model Backup {
+  id             Int       @id @default(autoincrement())
+  uuid           String    @unique @default(uuid()) @db.Uuid
+  serverId       Int       @map("server_id")
+  name           String
+  ignoredFiles   String[]  @default([]) @map("ignored_files")
+  disk           String    @default("local") // "local" or "s3"
+  checksum       String?
+  bytes          BigInt    @default(0)
+  isSuccessful   Boolean?  @map("is_successful")
+  isLocked       Boolean   @default(false) @map("is_locked")
+  completedAt    DateTime? @map("completed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+  @@map("backups")
+}
+
+// ─── Schedules ───────────────────────────────────────────────────────
+
+model Schedule {
+  id              Int       @id @default(autoincrement())
+  serverId        Int       @map("server_id")
+  name            String
+  cronMinute      String    @map("cron_minute")
+  cronHour        String    @map("cron_hour")
+  cronDayOfMonth  String    @map("cron_day_of_month")
+  cronMonth       String    @map("cron_month")
+  cronDayOfWeek   String    @map("cron_day_of_week")
+  isActive        Boolean   @default(true) @map("is_active")
+  isProcessing    Boolean   @default(false) @map("is_processing")
+  onlyWhenOnline  Boolean   @default(false) @map("only_when_online")
+  lastRunAt       DateTime? @map("last_run_at")
+  nextRunAt       DateTime? @map("next_run_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  server Server         @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  tasks  ScheduleTask[]
+
+  @@index([serverId])
+  @@index([isActive, nextRunAt])
+  @@map("schedules")
+}
+
+model ScheduleTask {
+  id           Int    @id @default(autoincrement())
+  scheduleId   Int    @map("schedule_id")
+  sequenceId   Int    @map("sequence_id")
+  action       String // "power", "command", "backup"
+  payload      String @db.Text
+  timeOffset   Int    @default(0) @map("time_offset") // Seconds delay
+  continueOnFailure Boolean @default(false) @map("continue_on_failure")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  schedule Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, sequenceId])
+  @@map("schedule_tasks")
+}
+
+// ─── Mounts ──────────────────────────────────────────────────────────
+
+model Mount {
+  id        Int      @id @default(autoincrement())
+  uuid      String   @unique @default(uuid()) @db.Uuid
+  name      String   @unique
+  source    String   // Host path (admin-managed allowlist)
+  target    String   // Container path
+  readOnly  Boolean  @default(false) @map("read_only")
+  userMountable Boolean @default(false) @map("user_mountable")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  nodes   MountNode[]
+  servers ServerMount[]
+  eggs    MountEgg[]
+
+  @@map("mounts")
+}
+
+model MountNode {
+  mountId Int @map("mount_id")
+  nodeId  Int @map("node_id")
+
+  mount Mount @relation(fields: [mountId], references: [id], onDelete: Cascade)
+  node  Node  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@id([mountId, nodeId])
+  @@map("mount_nodes")
+}
+
+model MountEgg {
+  mountId Int @map("mount_id")
+  eggId   Int @map("egg_id")
+
+  mount Mount @relation(fields: [mountId], references: [id], onDelete: Cascade)
+
+  @@id([mountId, eggId])
+  @@map("mount_eggs")
+}
+
+model ServerMount {
+  serverId Int @map("server_id")
+  mountId  Int @map("mount_id")
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  mount  Mount  @relation(fields: [mountId], references: [id], onDelete: Cascade)
+
+  @@id([serverId, mountId])
+  @@map("server_mounts")
+}
+
+// ─── Transfers ───────────────────────────────────────────────────────
+
+model TransferLog {
+  id              Int       @id @default(autoincrement())
+  serverId        Int       @map("server_id")
+  sourceNodeId    Int       @map("source_node_id")
+  targetNodeId    Int       @map("target_node_id")
+  targetAllocationId Int    @map("target_allocation_id")
+  phase           String    // archiving, archived, transferring, completing, completed, failed
+  successful      Boolean?
+  startedAt       DateTime  @default(now()) @map("started_at")
+  completedAt     DateTime? @map("completed_at")
+  archived        Boolean   @default(false)
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+  @@map("transfer_logs")
+}
+
+// ─── Audit & Activity Logs ───────────────────────────────────────────
+
+model AuditLog {
+  id            BigInt   @id @default(autoincrement())
+  uuid          String   @unique @default(uuid()) @db.Uuid
+  userId        Int?     @map("user_id")
+  action        String
+  subaction     String?
+  device        Json?    // { ip, userAgent }
+  metadata      Json     @default("{}") // Secrets redacted
+  isSystem      Boolean  @default(false) @map("is_system")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model ActivityLog {
+  id          BigInt   @id @default(autoincrement())
+  userId      Int?     @map("user_id")
+  serverId    Int?     @map("server_id")
+  event       String
+  description String?
+  properties  Json     @default("{}") // Secrets redacted
+  ip          String?
+  timestamp   DateTime @default(now())
+
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  server Server? @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([serverId])
+  @@index([event])
+  @@index([timestamp])
+  @@map("activity_logs")
+}
+
+// ─── Settings ────────────────────────────────────────────────────────
+
+model Setting {
+  key   String @id
+  value String @db.Text
+
+  @@map("settings")
+}

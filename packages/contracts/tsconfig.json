@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "ES2022",
+    "composite": false,
+    "declaration": true,
+    "declarationMap": false,
+    "noEmit": false
+  },
+  "include": ["src"]
+}

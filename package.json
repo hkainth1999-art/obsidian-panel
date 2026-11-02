@@ -1,0 +1,31 @@
+{
+  "name": "obsidian-panel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted game server management panel with Pterodactyl Wings compatibility",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.12.3",
+  "scripts": {
+    "predev": "node -e \"try{fs.rmSync('apps/web/.next',{recursive:true,force:true})}catch(e){}\"",
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "dev:api": "pnpm --filter @obsidian/api dev",
+    "dev:web": "pnpm --filter @obsidian/web dev",
+    "dev:worker": "pnpm --filter @obsidian/worker dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:integration": "pnpm --filter @obsidian/api test:integration",
+    "typecheck": "pnpm -r typecheck",
+    "db:migrate": "pnpm --filter @obsidian/api prisma:migrate",
+    "db:migrate:deploy": "pnpm --filter @obsidian/api prisma:migrate:deploy",
+    "db:push": "pnpm --filter @obsidian/api prisma:push",
+    "db:generate": "pnpm --filter @obsidian/api prisma:generate",
+    "db:seed": "echo 'No seed data. Use bootstrap command for first admin.'",
+    "format": "prettier --write .",
+    "clean": "pnpm -r clean"
+  }
+}

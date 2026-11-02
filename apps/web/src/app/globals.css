@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 9 9 9;
+    --surface: 17 17 17;
+    --surface-elevated: 24 24 24;
+    --border: 39 39 39;
+    --primary: 6 182 212;
+    --color-primary: #06B6D4;
+    --color-primary-hover: #0891B2;
+  }
+
+  body {
+    background-color: #090909;
+    color: #F4F4F5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  /* Custom subtle scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #090909;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #272727;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3F3F46;
+  }
+
+  /* Focus rings */
+  :focus-visible {
+    outline: none;
+  }
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #090909;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #272727;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3F3F46;
+}
+
+/* XTerm terminal container adjustments - completely strip any blue focus outline or glow */
+.terminal,
+.xterm,
+.xterm-viewport,
+.xterm-screen,
+.xterm:focus,
+.xterm:focus-visible,
+.xterm-helper-textarea,
+.xterm-helper-textarea:focus {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.terminal .xterm-viewport {
+  background-color: #0a0d14 !important;
+}
+
+.terminal .xterm-screen {
+  padding: 8px !important;
+}

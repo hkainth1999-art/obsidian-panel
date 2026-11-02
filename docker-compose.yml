@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: obsidian-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: obsidian
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-obsidian_secure_password}
+      POSTGRES_DB: obsidian_panel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - obsidian-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U obsidian -d obsidian_panel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: obsidian-redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secure_password}
+    volumes:
+      - redis_data:/data
+    networks:
+      - obsidian-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secure_password}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: obsidian-api
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://obsidian:${DB_PASSWORD:-obsidian_secure_password}@postgres:5432/obsidian_panel?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379
+      SESSION_SECRET: ${SESSION_SECRET:-change_this_to_a_random_64_character_hex_secret}
+    networks:
+      - obsidian-network
+    expose:
+      - "3001"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: obsidian-web
+    restart: always
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_URL: http://api:3001
+    ports:
+      - "3000:3000"
+    networks:
+      - obsidian-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  obsidian-network:
+    driver: bridge
