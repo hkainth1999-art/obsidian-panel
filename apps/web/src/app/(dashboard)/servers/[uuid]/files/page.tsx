@@ -23,6 +23,7 @@ import {
   Square,
   FileCode,
   Archive,
+  FolderInput,
 } from 'lucide-react';
 import { Button } from '../../../../../components/ui/button';
 import { formatBytes } from '../../../../../lib/utils';
@@ -70,6 +71,9 @@ export default function ServerFilesPage({
   const [renamingFile, setRenamingFile] = useState<WingsFile | null>(null);
   const [renameInput, setRenameInput] = useState('');
   const [copiedPath, setCopiedPath] = useState(false);
+  const [isMovingFiles, setIsMovingFiles] = useState(false);
+  const [movingFileNames, setMovingFileNames] = useState<string[]>([]);
+  const [moveDestination, setMoveDestination] = useState('');
 
   // Close context menu on outside click or escape
   useEffect(() => {
@@ -145,6 +149,52 @@ export default function ServerFilesPage({
       refetch();
     },
     onError: (err: any) => alert(`Rename failed: ${err.message}`),
+  });
+
+  // Move files mutation (supporting single or batch moves to any folder)
+  const moveFilesMutation = useMutation({
+    mutationFn: ({ fileNames, destination }: { fileNames: string[]; destination: string }) => {
+      let target = destination.trim();
+      if (!target) target = '/';
+
+      const filesPayload = fileNames.map((name) => {
+        const fromPath = currentDirectory === '/' ? `/${name}` : `${currentDirectory}/${name}`;
+        let toPath: string;
+
+        if (target === '..') {
+          const parentDir = currentDirectory.substring(0, currentDirectory.lastIndexOf('/')) || '/';
+          toPath = parentDir === '/' ? `/${name}` : `${parentDir}/${name}`;
+        } else if (target.startsWith('/')) {
+          toPath = target === '/' ? `/${name}` : `${target}/${name}`;
+        } else {
+          toPath = currentDirectory === '/' ? `/${target}/${name}` : `${currentDirectory}/${target}/${name}`;
+        }
+
+        toPath = toPath.replace(/\/+/g, '/');
+        const cleanFrom = fromPath.replace(/\/+/g, '/');
+
+        return {
+          from: cleanFrom,
+          to: toPath,
+        };
+      });
+
+      return fetchApi(`/api/client/servers/${uuid}/files/rename`, {
+        method: 'POST',
+        body: JSON.stringify({
+          root: '/',
+          files: filesPayload,
+        }),
+      });
+    },
+    onSuccess: () => {
+      setIsMovingFiles(false);
+      setMovingFileNames([]);
+      setSelectedNames(new Set());
+      setMoveDestination('');
+      refetch();
+    },
+    onError: (err: any) => alert(`Move failed: ${err.message}`),
   });
 
   // Create folder mutation
@@ -419,6 +469,20 @@ export default function ServerFilesPage({
             <span>Rename</span>
           </button>
 
+          {/* Move */}
+          <button
+            onClick={() => {
+              setMovingFileNames([contextMenu.file.name]);
+              setMoveDestination('');
+              setIsMovingFiles(true);
+              setContextMenu(null);
+            }}
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-surface-elevated hover:text-primary transition-colors text-left"
+          >
+            <FolderInput className="w-3.5 h-3.5 text-text-muted" />
+            <span>Move to Folder</span>
+          </button>
+
           {/* Download (if file) */}
           {!contextMenu.file.directory && (
             <button
@@ -622,6 +686,132 @@ export default function ServerFilesPage({
         </div>
       )}
 
+      {/* Move Files Modal */}
+      {isMovingFiles && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md bg-surface border border-border rounded-card p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-text-primary">
+                <FolderInput className="w-4 h-4 text-primary" />
+                <span>Move {movingFileNames.length} {movingFileNames.length === 1 ? 'Item' : 'Items'}</span>
+              </div>
+              <button
+                onClick={() => setIsMovingFiles(false)}
+                className="text-text-muted hover:text-text-primary"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (movingFileNames.length > 0 && moveDestination.trim()) {
+                  moveFilesMutation.mutate({
+                    fileNames: movingFileNames,
+                    destination: moveDestination,
+                  });
+                }
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="text-xs text-text-secondary font-medium block mb-1">
+                  Target Destination Directory
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={moveDestination}
+                  onChange={(e) => setMoveDestination(e.target.value)}
+                  placeholder="e.g. /plugins, /config, or .. (parent folder)"
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                />
+                <p className="text-[11px] text-text-muted mt-1.5">
+                  Current directory: <code className="text-primary font-mono">{currentDirectory}</code>
+                </p>
+              </div>
+
+              {/* Quick Destination Suggestions */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] uppercase font-semibold text-text-muted block">
+                  Quick Folder Targets
+                </span>
+                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                  {currentDirectory !== '/' && (
+                    <button
+                      type="button"
+                      onClick={() => setMoveDestination('..')}
+                      className="px-2 py-1 rounded bg-surface-elevated hover:bg-primary/20 hover:text-primary text-[11px] font-mono text-text-secondary border border-border transition-colors flex items-center gap-1"
+                    >
+                      <Folder className="w-3 h-3 text-amber-400" /> .. (Up one level)
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setMoveDestination('/')}
+                    className="px-2 py-1 rounded bg-surface-elevated hover:bg-primary/20 hover:text-primary text-[11px] font-mono text-text-secondary border border-border transition-colors flex items-center gap-1"
+                  >
+                    <Folder className="w-3 h-3 text-primary" /> / (Root)
+                  </button>
+                  {files?.filter((f) => f.directory && !movingFileNames.includes(f.name)).map((folder) => {
+                    const targetFolder = currentDirectory === '/' ? `/${folder.name}` : `${currentDirectory}/${folder.name}`;
+                    return (
+                      <button
+                        key={folder.name}
+                        type="button"
+                        onClick={() => setMoveDestination(targetFolder)}
+                        className="px-2 py-1 rounded bg-surface-elevated hover:bg-primary/20 hover:text-primary text-[11px] font-mono text-text-secondary border border-border transition-colors flex items-center gap-1"
+                      >
+                        <Folder className="w-3 h-3 text-cyan-400" /> {folder.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Selected Items Preview */}
+              <div className="p-2.5 rounded-control bg-surface-elevated/60 border border-border/70 max-h-24 overflow-y-auto">
+                <span className="text-[10px] text-text-muted uppercase font-semibold block mb-1">
+                  Files to be moved:
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {movingFileNames.map((name) => (
+                    <span
+                      key={name}
+                      className="px-1.5 py-0.5 rounded bg-surface text-[10px] font-mono text-text-primary border border-border truncate max-w-[200px]"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-border">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsMovingFiles(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={moveFilesMutation.isPending || !moveDestination.trim()}
+                  className="gap-1.5"
+                >
+                  <FolderInput className="w-3.5 h-3.5" />
+                  {moveFilesMutation.isPending ? 'Moving...' : 'Move Items'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* File Editor Modal */}
       {isEditing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in">
@@ -747,6 +937,19 @@ export default function ServerFilesPage({
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setMovingFileNames(Array.from(selectedNames));
+                setMoveDestination('');
+                setIsMovingFiles(true);
+              }}
+              className="gap-1.5 text-xs text-primary border-primary/30 hover:bg-primary/10"
+            >
+              <FolderInput className="w-3.5 h-3.5" /> Move Selected ({selectedNames.size})
+            </Button>
+
             <Button
               size="sm"
               variant="secondary"

@@ -106,7 +106,7 @@ export default function AdminServersPage() {
   // Feature Limits
   const [databases, setDatabases] = useState(0);
   const [allocationsLimit, setAllocationsLimit] = useState(0);
-  const [backups, setBackups] = useState(0);
+  const [backups, setBackups] = useState(5);
 
   // Search & Filter State
   const [search, setSearch] = useState('');

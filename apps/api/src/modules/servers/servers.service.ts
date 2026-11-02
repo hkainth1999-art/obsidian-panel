@@ -850,10 +850,14 @@ export class ServersService {
 
   async listBackups(uuid: string) {
     const server = await this.getServerByUuid(uuid);
-    return this.prisma.backup.findMany({
+    const backups = await this.prisma.backup.findMany({
       where: { serverId: server.id },
       orderBy: { createdAt: 'desc' },
     });
+    return backups.map((b) => ({
+      ...b,
+      bytes: typeof b.bytes === 'bigint' ? Number(b.bytes) : Number(b.bytes) || 0,
+    }));
   }
 
   async createBackup(uuid: string, name?: string, ignored?: string) {
@@ -875,15 +879,24 @@ export class ServersService {
         ignoredFiles: ignored ? ignored.split('\n').map((s) => s.trim()) : [],
         disk: 'wings',
         checksum: null,
-        bytes: 0,
+        bytes: BigInt(0),
         isSuccessful: false,
       },
     });
 
-    const client = this.getWingsClient(server.node);
-    await client.createBackup(server.uuid, backupUuid, 'wings', ignored);
+    try {
+      const client = this.getWingsClient(server.node);
+      await client.createBackup(server.uuid, backupUuid, 'wings', ignored);
+    } catch (err: any) {
+      this.logger.error(`Wings daemon failed to initiate backup for server ${server.uuid}: ${err.message}`);
+      await this.prisma.backup.delete({ where: { id: backup.id } }).catch(() => {});
+      throw new BadRequestException(`Wings daemon failed to start backup: ${err.message}`);
+    }
 
-    return backup;
+    return {
+      ...backup,
+      bytes: Number(backup.bytes),
+    };
   }
 
   async deleteBackup(uuid: string, backupUuid: string) {

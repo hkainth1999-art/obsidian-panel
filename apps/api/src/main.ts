@@ -1,3 +1,9 @@
+// Enable BigInt serialization to JSON across all controllers and responses
+(BigInt.prototype as any).toJSON = function () {
+  const int = Number.parseInt(this.toString(), 10);
+  return Number.isNaN(int) ? this.toString() : int;
+};
+
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,

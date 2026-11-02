@@ -29,6 +29,10 @@ export default function ServerBackupsPage({
   const { data: backups, isLoading } = useQuery({
     queryKey: ['server-backups', uuid],
     queryFn: () => fetchApi<any[]>(`/api/client/servers/${uuid}/backups`),
+    refetchInterval: (query) => {
+      const data = query.state.data as any[];
+      return data?.some((b: any) => !b.isSuccessful && !b.completedAt) ? 3000 : false;
+    },
   });
 
   const createMutation = useMutation({
@@ -42,6 +46,9 @@ export default function ServerBackupsPage({
       setBackupName('');
       queryClient.invalidateQueries({ queryKey: ['server-backups', uuid] });
     },
+    onError: (err: any) => {
+      alert(`Failed to create backup: ${err.message || 'Unknown error'}`);
+    },
   });
 
   const deleteMutation = useMutation({
@@ -51,6 +58,9 @@ export default function ServerBackupsPage({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['server-backups', uuid] });
+    },
+    onError: (err: any) => {
+      alert(`Failed to delete backup: ${err.message || 'Unknown error'}`);
     },
   });
 
@@ -62,6 +72,9 @@ export default function ServerBackupsPage({
       }),
     onSuccess: () => {
       alert('Backup restoration started in background on Wings daemon.');
+    },
+    onError: (err: any) => {
+      alert(`Failed to restore backup: ${err.message || 'Unknown error'}`);
     },
   });
 
@@ -149,8 +162,10 @@ export default function ServerBackupsPage({
                   <td className="px-5 py-3.5">
                     {backup.isSuccessful ? (
                       <Badge variant="success">READY</Badge>
+                    ) : backup.isSuccessful === false && backup.completedAt ? (
+                      <Badge variant="error">FAILED</Badge>
                     ) : (
-                      <Badge variant="warning">PROCESSING</Badge>
+                      <Badge variant="warning" className="animate-pulse">PROCESSING</Badge>
                     )}
                   </td>
                   <td className="px-5 py-3.5 font-mono text-text-muted text-[11px]">

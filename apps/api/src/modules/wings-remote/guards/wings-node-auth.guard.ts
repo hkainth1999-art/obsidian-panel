@@ -44,43 +44,44 @@ export class WingsNodeAuthGuard implements CanActivate {
 
       const credential = (match[1] || '').trim();
       const dotIndex = credential.indexOf('.');
-      if (dotIndex === -1) {
-        throw new ForbiddenException('The token provided is invalid.');
+
+      let node;
+      if (dotIndex !== -1) {
+        const tokenId = credential.substring(0, dotIndex);
+        const token = credential.substring(dotIndex + 1);
+
+        if (tokenId && token) {
+          node = await this.prisma.node.findUnique({
+            where: { daemonTokenId: tokenId },
+          });
+
+          if (node) {
+            const storedToken = Buffer.from(node.daemonToken, 'utf-8');
+            const providedToken = Buffer.from(token, 'utf-8');
+
+            if (storedToken.length === providedToken.length && timingSafeEqual(storedToken, providedToken)) {
+              request.authenticatedNode = node;
+              return true;
+            }
+          }
+        }
       }
 
-      const tokenId = credential.substring(0, dotIndex);
-      const token = credential.substring(dotIndex + 1);
-
-      if (!tokenId || !token) {
-        throw new ForbiddenException('The token provided is invalid.');
-      }
-
-      // Look up the node by token_id
-      const node = await this.prisma.node.findUnique({
-        where: { daemonTokenId: tokenId },
+      // Fallback: match direct daemonToken or daemonTokenId
+      node = await this.prisma.node.findFirst({
+        where: {
+          OR: [
+            { daemonToken: credential },
+            { daemonTokenId: credential },
+          ],
+        },
       });
 
-      if (!node) {
-        throw new ForbiddenException('The token provided is invalid.');
+      if (node) {
+        request.authenticatedNode = node;
+        return true;
       }
 
-      // Constant-time comparison to prevent timing attacks
-      // The stored token is the raw token (not hashed) because Wings needs it
-      // in the config.yml file and the Panel must be able to generate it.
-      const storedToken = Buffer.from(node.daemonToken, 'utf-8');
-      const providedToken = Buffer.from(token, 'utf-8');
-
-      if (storedToken.length !== providedToken.length) {
-        throw new ForbiddenException('The token provided is invalid.');
-      }
-
-      if (!timingSafeEqual(storedToken, providedToken)) {
-        throw new ForbiddenException('The token provided is invalid.');
-      }
-
-      // Attach the authenticated node to the request
-      request.authenticatedNode = node;
-
-      return true;
+      throw new ForbiddenException('The token provided is invalid.');
     }
   }
