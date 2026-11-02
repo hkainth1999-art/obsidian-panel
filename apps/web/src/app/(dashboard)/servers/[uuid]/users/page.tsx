@@ -66,7 +66,10 @@ export default function ServerUsersPage({
     { key: Permission.FILE_UPDATE, label: 'Write Files' },
     { key: Permission.FILE_DELETE, label: 'Delete Files' },
     { key: Permission.BACKUP_CREATE, label: 'Create Backups' },
+    { key: Permission.BACKUP_READ, label: 'View Backups' },
+    { key: Permission.BACKUP_DOWNLOAD, label: 'Download Backups' },
     { key: Permission.BACKUP_RESTORE, label: 'Restore Backups' },
+    { key: Permission.BACKUP_DELETE, label: 'Delete Backups' },
   ];
 
   const togglePermission = (perm: string) => {

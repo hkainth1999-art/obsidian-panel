@@ -253,10 +253,32 @@ export default function ServerFilesPage({
   const handleDownloadFile = async (fileName: string) => {
     const filePath = currentDirectory === '/' ? `/${fileName}` : `${currentDirectory}/${fileName}`;
     try {
-      const res = await fetch(`/api/client/servers/${uuid}/files/contents?file=${encodeURIComponent(filePath)}`, {
+      let token = typeof window !== 'undefined' ? localStorage.getItem('obsidian_session_token') : null;
+      if (!token && typeof document !== 'undefined') {
+        const match = document.cookie.match(/(?:^|;\s*)session=([^;]+)/);
+        if (match && match[1]) {
+          token = decodeURIComponent(match[1]);
+          try {
+            localStorage.setItem('obsidian_session_token', token);
+          } catch {}
+        }
+      }
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const queryToken = token ? `&token=${encodeURIComponent(token)}` : '';
+      const res = await fetch(`/api/client/servers/${uuid}/files/contents?file=${encodeURIComponent(filePath)}${queryToken}`, {
+        headers,
         credentials: 'include',
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 401) {
+          throw new Error('Authentication required or session expired.');
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -285,15 +307,32 @@ export default function ServerFilesPage({
 
     setUploading(true);
     try {
+      let token = typeof window !== 'undefined' ? localStorage.getItem('obsidian_session_token') : null;
+      if (!token && typeof document !== 'undefined') {
+        const match = document.cookie.match(/(?:^|;\s*)session=([^;]+)/);
+        if (match && match[1]) {
+          token = decodeURIComponent(match[1]);
+          try {
+            localStorage.setItem('obsidian_session_token', token);
+          } catch {}
+        }
+      }
+
       for (let i = 0; i < fileList.length; i++) {
         const f = fileList[i];
         if (!f) continue;
         const targetPath = currentDirectory === '/' ? `/${f.name}` : `${currentDirectory}/${f.name}`;
-        const res = await fetch(`/api/client/servers/${uuid}/files/write?file=${encodeURIComponent(targetPath)}`, {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/octet-stream',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const queryToken = token ? `&token=${encodeURIComponent(token)}` : '';
+        const res = await fetch(`/api/client/servers/${uuid}/files/write?file=${encodeURIComponent(targetPath)}${queryToken}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-          },
+          headers,
           body: f,
           credentials: 'include',
         });

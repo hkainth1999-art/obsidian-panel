@@ -38,6 +38,12 @@ export class SessionGuard implements CanActivate {
       sessionToken = String(xSession).trim();
     }
 
+    // 5. Try token from query parameter (for direct browser file/backup downloads)
+    const queryToken = request.query?.token;
+    if (!sessionToken && typeof queryToken === 'string') {
+      sessionToken = queryToken.trim();
+    }
+
     if (sessionToken) {
       const user = await this.authService.validateSession(sessionToken);
       if (user) {

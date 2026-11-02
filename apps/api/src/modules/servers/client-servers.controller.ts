@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Req,
+  Res,
   ParseIntPipe,
   BadRequestException,
 } from '@nestjs/common';
@@ -304,6 +305,29 @@ export class ClientServersController {
     @Body() body: { truncateDirectory?: boolean },
   ) {
     return this.serversService.restoreBackup(uuid, backupUuid, body.truncateDirectory);
+  }
+
+  @Get(':uuid/backups/:backupUuid/download')
+  @UseGuards(ServerAccessGuard)
+  @RequirePermissions(Permission.BACKUP_DOWNLOAD)
+  @ApiOperation({ summary: 'Get backup download signed URL' })
+  async getBackupDownload(
+    @Param('uuid') uuid: string,
+    @Param('backupUuid') backupUuid: string,
+  ) {
+    return this.serversService.getBackupDownload(uuid, backupUuid);
+  }
+
+  @Get(':uuid/backups/:backupUuid/stream')
+  @UseGuards(ServerAccessGuard)
+  @RequirePermissions(Permission.BACKUP_DOWNLOAD)
+  @ApiOperation({ summary: 'Stream backup archive directly' })
+  async streamBackup(
+    @Param('uuid') uuid: string,
+    @Param('backupUuid') backupUuid: string,
+    @Res() reply: any,
+  ) {
+    return this.serversService.streamBackup(uuid, backupUuid, reply);
   }
 
   // ─── Subusers ──────────────────────────────────────────────────────

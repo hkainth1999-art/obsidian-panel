@@ -11,6 +11,7 @@ import {
   CheckCircle,
   XCircle,
   Lock,
+  Download,
 } from 'lucide-react';
 import { Button } from '../../../../../components/ui/button';
 import { Badge } from '../../../../../components/ui/badge';
@@ -25,6 +26,64 @@ export default function ServerBackupsPage({
   const queryClient = useQueryClient();
   const [backupName, setBackupName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [downloadingUuid, setDownloadingUuid] = useState<string | null>(null);
+
+  const handleDownloadBackup = async (backup: any) => {
+    setDownloadingUuid(backup.uuid);
+    try {
+      let token = typeof window !== 'undefined' ? localStorage.getItem('obsidian_session_token') : null;
+      if (!token && typeof document !== 'undefined') {
+        const match = document.cookie.match(/(?:^|;\s*)session=([^;]+)/);
+        if (match && match[1]) {
+          token = decodeURIComponent(match[1]);
+          try {
+            localStorage.setItem('obsidian_session_token', token);
+          } catch {}
+        }
+      }
+
+      const res = await fetchApi<{ url: string; filename: string }>(
+        `/api/client/servers/${uuid}/backups/${backup.uuid}/download`,
+      );
+
+      // If panel is served over HTTPS and daemon is HTTP, direct browser navigation is blocked by mixed-content
+      const isMixedContent =
+        typeof window !== 'undefined' &&
+        window.location.protocol === 'https:' &&
+        res.url.startsWith('http://');
+
+      if (!isMixedContent && res?.url) {
+        // Direct download from Wings daemon
+        const a = document.createElement('a');
+        a.href = res.url;
+        a.download = res.filename || `${backup.name || backup.uuid}.tar.gz`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        // Fallback or HTTPS-safe proxy stream through panel API
+        const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
+        const proxyUrl = `/api/client/servers/${uuid}/backups/${backup.uuid}/stream${tokenQuery}`;
+        window.open(proxyUrl, '_blank');
+      }
+    } catch (err: any) {
+      // Direct stream fallback
+      try {
+        let token = typeof window !== 'undefined' ? localStorage.getItem('obsidian_session_token') : null;
+        if (!token && typeof document !== 'undefined') {
+          const match = document.cookie.match(/(?:^|;\s*)session=([^;]+)/);
+          if (match && match[1]) token = decodeURIComponent(match[1]);
+        }
+        const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
+        const proxyUrl = `/api/client/servers/${uuid}/backups/${backup.uuid}/stream${tokenQuery}`;
+        window.open(proxyUrl, '_blank');
+      } catch (streamErr: any) {
+        alert(`Failed to download backup: ${err.message || streamErr.message}`);
+      }
+    } finally {
+      setDownloadingUuid(null);
+    }
+  };
 
   const { data: backups, isLoading } = useQuery({
     queryKey: ['server-backups', uuid],
@@ -172,6 +231,19 @@ export default function ServerBackupsPage({
                     {new Date(backup.createdAt).toLocaleString()}
                   </td>
                   <td className="px-5 py-3.5 text-right space-x-2">
+                    {backup.isSuccessful && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={downloadingUuid === backup.uuid}
+                        onClick={() => handleDownloadBackup(backup)}
+                        title="Download backup archive (.tar.gz)"
+                        className="text-primary hover:text-primary-hover border-primary/30"
+                      >
+                        <Download className="w-3.5 h-3.5 mr-1" />
+                        {downloadingUuid === backup.uuid ? 'Downloading...' : 'Download'}
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       size="sm"

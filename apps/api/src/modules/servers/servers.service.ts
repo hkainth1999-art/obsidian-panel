@@ -10,6 +10,8 @@ import { WingsRemoteService } from '../wings-remote/wings-remote.service';
 import { AuthService } from '../auth/auth.service';
 import { WingsClient } from '@obsidian/wings-adapter';
 import * as crypto from 'crypto';
+import * as jwt from 'jsonwebtoken';
+import { Readable } from 'stream';
 
 // Maximum signed 32-bit integer supported by PostgreSQL INT4 (2,147,483,647 MiB = ~2 Petabytes)
 const MAX_INT4 = 2147483647;
@@ -933,6 +935,79 @@ export class ServersService {
     });
 
     return { success: true, message: 'Backup restore initiated' };
+  }
+
+  async getBackupDownload(uuid: string, backupUuid: string) {
+    const server = await this.getServerByUuid(uuid);
+    const backup = await this.prisma.backup.findFirst({
+      where: { uuid: backupUuid, serverId: server.id },
+    });
+
+    if (!backup) throw new NotFoundException('Backup not found');
+    if (!backup.isSuccessful) {
+      throw new BadRequestException('This backup is still processing. Please wait for it to complete.');
+    }
+
+    const node = await this.prisma.node.findUnique({
+      where: { id: server.nodeId },
+    });
+
+    if (!node) throw new NotFoundException('Hosting node not found');
+
+    // Generate signed JWT for Wings /download/backup
+    const token = jwt.sign(
+      {
+        server_uuid: server.uuid,
+        backup_uuid: backup.uuid,
+        unique_id: crypto.randomBytes(8).toString('hex'),
+      },
+      node.daemonToken,
+      {
+        algorithm: 'HS256',
+        expiresIn: '1h',
+        issuer: 'obsidian-panel',
+        subject: 'backup-download',
+      },
+    );
+
+    const safeName = (backup.name || 'backup').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filename = safeName.endsWith('.tar.gz') ? safeName : `${safeName}.tar.gz`;
+    const downloadUrl = `${node.scheme}://${node.fqdn}:${node.daemonPort}/download/backup?token=${token}`;
+
+    return {
+      url: downloadUrl,
+      filename,
+      token,
+      backupUuid: backup.uuid,
+    };
+  }
+
+  async streamBackup(uuid: string, backupUuid: string, reply: any) {
+    const { url, filename } = await this.getBackupDownload(uuid, backupUuid);
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new BadRequestException(`Wings daemon download failed with HTTP ${response.status}`);
+      }
+
+      const contentLength = response.headers.get('content-length');
+      reply.header('Content-Type', 'application/x-gzip');
+      reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      if (contentLength) {
+        reply.header('Content-Length', contentLength);
+      }
+
+      if (!response.body) {
+        throw new BadRequestException('Empty response body from Wings daemon');
+      }
+
+      const nodeStream = Readable.fromWeb(response.body as any);
+      return reply.send(nodeStream);
+    } catch (err: any) {
+      this.logger.error(`Failed to stream backup ${backupUuid}: ${err.message}`);
+      throw new BadRequestException(`Could not stream backup: ${err.message}`);
+    }
   }
 
   // ─── Subusers ──────────────────────────────────────────────────────

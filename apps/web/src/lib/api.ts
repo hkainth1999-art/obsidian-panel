@@ -25,10 +25,19 @@ export async function fetchApi<T = any>(
     headers.set('Content-Type', 'application/json');
   }
 
-  // Dual-channel auth: Attach Bearer token from storage if present (fallback for cookies)
+  // Dual-channel auth: Attach Bearer token from storage/cookie if present
   if (typeof window !== 'undefined') {
     try {
-      const storedToken = localStorage.getItem('obsidian_session_token');
+      let storedToken = localStorage.getItem('obsidian_session_token');
+      if (!storedToken && typeof document !== 'undefined') {
+        const match = document.cookie.match(/(?:^|;\s*)session=([^;]+)/);
+        if (match && match[1]) {
+          storedToken = decodeURIComponent(match[1]);
+          try {
+            localStorage.setItem('obsidian_session_token', storedToken);
+          } catch {}
+        }
+      }
       if (storedToken && !headers.has('Authorization')) {
         headers.set('Authorization', `Bearer ${storedToken}`);
       }
