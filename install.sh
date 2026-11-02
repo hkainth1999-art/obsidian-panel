@@ -421,8 +421,8 @@ EOF
         echo -e "${GREEN}[*] Downloading Obsidian Panel codebase via Git...${NC}"
         REPO_URL=${PANEL_REPO_URL:-""}
         if [ -z "$REPO_URL" ]; then
-            read_input "Enter Obsidian Panel Git Repository URL [default: https://github.com/obsidian-ontop/obsiden-panel.git]: " INPUT_REPO_URL
-            REPO_URL=${INPUT_REPO_URL:-"https://github.com/obsidian-ontop/obsiden-panel.git"}
+            read_input "Enter Obsidian Panel Git Repository URL [default: https://github.com/hkainth1999-art/obsidian-panel.git]: " INPUT_REPO_URL
+            REPO_URL=${INPUT_REPO_URL:-"https://github.com/hkainth1999-art/obsidian-panel.git"}
         fi
         echo -e "${GREEN}[*] Cloning from ${REPO_URL}...${NC}"
         git clone "$REPO_URL" "$INSTALL_DIR" || {
@@ -516,7 +516,7 @@ EOF
     cat << EOF > /etc/systemd/system/obsidian-api.service
 [Unit]
 Description=Obsidian Panel API Daemon (Control Plane)
-Documentation=https://github.com/obsidian-ontop/obsiden-panel
+Documentation=https://github.com/hkainth1999-art/obsidian-panel
 After=network.target postgresql.service redis.service
 Requires=postgresql.service redis.service
 
@@ -546,7 +546,7 @@ EOF
     cat << EOF > /etc/systemd/system/obsidian-web.service
 [Unit]
 Description=Obsidian Panel Web Frontend (Next.js)
-Documentation=https://github.com/obsidian-ontop/obsiden-panel
+Documentation=https://github.com/hkainth1999-art/obsidian-panel
 After=network.target obsidian-api.service
 Wants=obsidian-api.service
 

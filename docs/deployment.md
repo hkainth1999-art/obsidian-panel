@@ -16,7 +16,7 @@ bash install.sh
 
 ```bash
 # Run the installer directly (No flags needed!)
-sudo bash <(curl -sSL https://raw.githubusercontent.com/obsidian-ontop/obsiden-panel/refs/heads/main/install.sh)
+sudo bash <(curl -sSL https://raw.githubusercontent.com/hkainth1999-art/obsidian-panel/refs/heads/main/install.sh)
 ```
 
 Running the command presents an interactive menu:

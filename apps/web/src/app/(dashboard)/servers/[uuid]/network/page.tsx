@@ -7,6 +7,7 @@ import { Network, Server, Key, Copy, Check, Plus, Trash2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '../../../../../components/ui/card';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
+import { useAuth } from '../../../../../contexts/auth-context';
 
 export default function ServerNetworkPage({
   params,
@@ -14,6 +15,7 @@ export default function ServerNetworkPage({
   params: { uuid: string };
 }) {
   const uuid = params.uuid;
+  const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
 
   const { data: server, isLoading: isServerLoading } = useQuery({
@@ -147,10 +149,11 @@ export default function ServerNetworkPage({
               SFTP Username
             </span>
             <div className="flex items-center justify-between font-mono text-xs text-text-primary">
-              <span>{server?.owner?.username}.{server?.uuidShort}</span>
+              <span>{currentUser?.username || server?.owner?.username || 'user'}.{server?.uuidShort}</span>
               <button
-                onClick={() => copyToClipboard(`${server?.owner?.username}.${server?.uuidShort}`, 'user')}
+                onClick={() => copyToClipboard(`${currentUser?.username || server?.owner?.username || 'user'}.${server?.uuidShort}`, 'user')}
                 className="text-text-muted hover:text-text-primary"
+                title="Copy SFTP Username"
               >
                 {copied === 'user' ? <Check className="w-3.5 h-3.5 text-status-running" /> : <Copy className="w-3.5 h-3.5" />}
               </button>

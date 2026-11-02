@@ -35,14 +35,14 @@ export class WingsNodeAuthGuard implements CanActivate {
       );
     }
 
-    const parts = authHeader.split(' ');
-    if (parts.length !== 2 || parts[0] !== 'Bearer') {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (!match) {
       throw new UnauthorizedException(
         'The required authorization headers were not present in the request.',
       );
     }
 
-    const credential = parts[1]!;
+    const credential = (match[1] || '').trim();
     const dotIndex = credential.indexOf('.');
     if (dotIndex === -1) {
       throw new ForbiddenException('The token provided is invalid.');
