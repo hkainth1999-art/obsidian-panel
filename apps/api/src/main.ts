@@ -13,6 +13,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { Logger } from '@nestjs/common';
 import { SecurityService } from './modules/security/security.service';
+import { BigIntInterceptor } from './common/interceptors/bigint.interceptor';
 
 async function bootstrap() {
   const fastifyAdapter = new FastifyAdapter({
@@ -25,6 +26,9 @@ async function bootstrap() {
     AppModule,
     fastifyAdapter,
   );
+
+  // Global BigInt serializer to prevent Fastify reply.js serialization crashes
+  app.useGlobalInterceptors(new BigIntInterceptor());
 
   // Register application/octet-stream parser up to 100MB for direct file/plugin uploads
   const fastifyInstance = app.getHttpAdapter().getInstance();
