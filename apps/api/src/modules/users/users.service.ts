@@ -31,7 +31,6 @@ export class UsersService {
           email: true,
           isAdmin: true,
           language: true,
-          avatarUrl: true,
           totpEnabled: true,
           createdAt: true,
           updatedAt: true,
@@ -45,8 +44,19 @@ export class UsersService {
       }),
     ]);
 
+    const avatarKeys = users.map((u) => `user:avatar:${u.id}`);
+    const avatarRecords = await this.prisma.setting.findMany({
+      where: { key: { in: avatarKeys } },
+    }).catch(() => []);
+    const avatarMap = new Map(avatarRecords.map((r) => [r.key, r.value]));
+
+    const mappedUsers = users.map((u) => ({
+      ...u,
+      avatarUrl: avatarMap.get(`user:avatar:${u.id}`) || null,
+    }));
+
     return {
-      data: users,
+      data: mappedUsers,
       meta: {
         page,
         perPage,
@@ -66,7 +76,6 @@ export class UsersService {
         email: true,
         isAdmin: true,
         language: true,
-        avatarUrl: true,
         totpEnabled: true,
         createdAt: true,
         updatedAt: true,
@@ -105,7 +114,14 @@ export class UsersService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    return user;
+    const avatarRecord = await this.prisma.setting.findUnique({
+      where: { key: `user:avatar:${id}` },
+    }).catch(() => null);
+
+    return {
+      ...user,
+      avatarUrl: avatarRecord?.value || null,
+    };
   }
 
   async createUser(dto: {
@@ -181,7 +197,23 @@ export class UsersService {
       });
     }
 
-    return this.prisma.user.update({
+    if (typeof dto.avatarUrl !== 'undefined') {
+      if (dto.avatarUrl) {
+        await this.prisma.setting
+          .upsert({
+            where: { key: `user:avatar:${id}` },
+            update: { value: dto.avatarUrl },
+            create: { key: `user:avatar:${id}`, value: dto.avatarUrl },
+          })
+          .catch(() => {});
+      } else {
+        await this.prisma.setting
+          .delete({ where: { key: `user:avatar:${id}` } })
+          .catch(() => {});
+      }
+    }
+
+    const updated = await this.prisma.user.update({
       where: { id },
       data: updateData,
       select: {
@@ -191,18 +223,41 @@ export class UsersService {
         email: true,
         isAdmin: true,
         language: true,
-        avatarUrl: true,
         updatedAt: true,
       },
     });
+
+    const avatarRecord = await this.prisma.setting
+      .findUnique({ where: { key: `user:avatar:${id}` } })
+      .catch(() => null);
+
+    return {
+      ...updated,
+      avatarUrl: avatarRecord?.value || null,
+    };
   }
 
   async updateProfile(userId: number, dto: { avatarUrl?: string | null; language?: string }) {
     const updateData: any = {};
-    if (typeof dto.avatarUrl !== 'undefined') updateData.avatarUrl = dto.avatarUrl;
     if (dto.language) updateData.language = dto.language;
 
-    return this.prisma.user.update({
+    if (typeof dto.avatarUrl !== 'undefined') {
+      if (dto.avatarUrl) {
+        await this.prisma.setting
+          .upsert({
+            where: { key: `user:avatar:${userId}` },
+            update: { value: dto.avatarUrl },
+            create: { key: `user:avatar:${userId}`, value: dto.avatarUrl },
+          })
+          .catch(() => {});
+      } else {
+        await this.prisma.setting
+          .delete({ where: { key: `user:avatar:${userId}` } })
+          .catch(() => {});
+      }
+    }
+
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: updateData,
       select: {
@@ -210,11 +265,19 @@ export class UsersService {
         uuid: true,
         username: true,
         email: true,
-        avatarUrl: true,
         language: true,
         isAdmin: true,
       },
     });
+
+    const avatarRecord = await this.prisma.setting
+      .findUnique({ where: { key: `user:avatar:${userId}` } })
+      .catch(() => null);
+
+    return {
+      ...updated,
+      avatarUrl: avatarRecord?.value || null,
+    };
   }
 
   async transferServerOwnership(serverIdOrUuid: string | number, newOwnerId: number) {

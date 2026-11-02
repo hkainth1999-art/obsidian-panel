@@ -129,6 +129,10 @@ export class AuthController {
       },
     });
 
+    const avatarSetting = await this.prisma.setting
+      .findUnique({ where: { key: `user:avatar:${user.id}` } })
+      .catch(() => null);
+
     return {
       data: {
         complete: true,
@@ -140,7 +144,7 @@ export class AuthController {
           email: user.email,
           isAdmin: user.isAdmin,
           language: user.language,
-          avatarUrl: user.avatarUrl ?? null,
+          avatarUrl: avatarSetting?.value || null,
           totpEnabled: user.totpEnabled,
           createdAt: user.createdAt.toISOString(),
           updatedAt: user.updatedAt.toISOString(),
@@ -187,6 +191,10 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current user' })
   async me(@Req() req: any) {
     const user = req.user;
+    const avatarSetting = await this.prisma.setting
+      .findUnique({ where: { key: `user:avatar:${user.id}` } })
+      .catch(() => null);
+
     return {
       data: {
         id: user.id,
@@ -195,7 +203,7 @@ export class AuthController {
         email: user.email,
         isAdmin: user.isAdmin,
         language: user.language,
-        avatarUrl: user.avatarUrl ?? null,
+        avatarUrl: avatarSetting?.value || null,
         totpEnabled: user.totpEnabled,
         emailVerifiedAt: user.emailVerifiedAt?.toISOString() ?? null,
         createdAt: user.createdAt.toISOString(),
