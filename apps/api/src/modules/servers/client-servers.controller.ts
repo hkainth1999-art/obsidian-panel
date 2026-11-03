@@ -314,8 +314,9 @@ export class ClientServersController {
   async getBackupDownload(
     @Param('uuid') uuid: string,
     @Param('backupUuid') backupUuid: string,
+    @Req() req: any,
   ) {
-    return this.serversService.getBackupDownload(uuid, backupUuid);
+    return this.serversService.getBackupDownload(uuid, backupUuid, req.user);
   }
 
   @Get(':uuid/backups/:backupUuid/stream')
@@ -326,8 +327,9 @@ export class ClientServersController {
     @Param('uuid') uuid: string,
     @Param('backupUuid') backupUuid: string,
     @Res() reply: any,
+    @Req() req: any,
   ) {
-    return this.serversService.streamBackup(uuid, backupUuid, reply);
+    return this.serversService.streamBackup(uuid, backupUuid, reply, req.user);
   }
 
   // ─── Subusers ──────────────────────────────────────────────────────

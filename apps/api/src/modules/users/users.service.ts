@@ -8,11 +8,12 @@ export class UsersService {
 
   async listUsers(page: number = 1, perPage: number = 25, search?: string) {
     const skip = (page - 1) * perPage;
-    const where = search
+    const cleanSearch = search?.trim();
+    const where = cleanSearch
       ? {
           OR: [
-            { username: { contains: search, mode: 'insensitive' as const } },
-            { email: { contains: search, mode: 'insensitive' as const } },
+            { username: { contains: cleanSearch, mode: 'insensitive' as const } },
+            { email: { contains: cleanSearch, mode: 'insensitive' as const } },
           ],
         }
       : {};

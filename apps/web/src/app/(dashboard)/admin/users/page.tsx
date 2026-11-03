@@ -24,10 +24,21 @@ export default function AdminUsersPage() {
   const [editEmail, setEditEmail] = useState('');
   const [editIsAdmin, setEditIsAdmin] = useState(false);
 
-  const { data: usersData, isLoading } = useQuery<any>({
+  const {
+    data: usersData,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<any>({
     queryKey: ['admin-users', search],
-    queryFn: () => fetchApi(`/api/admin/users?search=${encodeURIComponent(search)}`),
+    queryFn: () => {
+      const q = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+      return fetchApi(`/api/admin/users${q}`);
+    },
   });
+
+  const usersList: any[] = Array.isArray(usersData) ? usersData : (usersData?.data || []);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -250,9 +261,18 @@ export default function AdminUsersPage() {
       <div className="bg-surface border border-border rounded-card overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-xs text-text-muted">Loading users...</div>
-        ) : (usersData?.data || []).length === 0 ? (
+        ) : isError ? (
+          <div className="p-8 text-center text-xs space-y-3">
+            <p className="text-status-error font-medium">
+              Failed to load user accounts: {(error as any)?.message || 'Unknown network error'}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              Retry
+            </Button>
+          </div>
+        ) : usersList.length === 0 ? (
           <div className="p-12 text-center text-xs text-text-muted">
-            No users found matching query.
+            {search.trim() ? 'No users found matching query.' : 'No users found in database.'}
           </div>
         ) : (
           <table className="w-full text-left text-xs">
@@ -267,7 +287,7 @@ export default function AdminUsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {usersData?.data?.map((user: any) => (
+              {usersList.map((user: any) => (
                 <tr key={user.id} className="hover:bg-surface-elevated/20 transition-colors">
                   <td className="px-5 py-3.5 font-medium text-text-primary flex items-center gap-2">
                     <Users className="w-4 h-4 text-text-muted" />

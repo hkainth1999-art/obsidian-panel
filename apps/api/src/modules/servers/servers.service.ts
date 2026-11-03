@@ -12,6 +12,8 @@ import { AuthService } from '../auth/auth.service';
 import { WingsClient } from '@obsidian/wings-adapter';
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Readable } from 'stream';
 
 // Maximum signed 32-bit integer supported by PostgreSQL INT4 (2,147,483,647 MiB = ~2 Petabytes)
@@ -942,7 +944,7 @@ export class ServersService {
     return { success: true, message: 'Backup restore initiated' };
   }
 
-  async getBackupDownload(uuid: string, backupUuid: string) {
+  async getBackupDownload(uuid: string, backupUuid: string, user?: any) {
     const server = await this.getServerByUuid(uuid);
     const backup = await this.prisma.backup.findFirst({
       where: { uuid: backupUuid, serverId: server.id },
@@ -962,22 +964,27 @@ export class ServersService {
     const panelUrl = (this.config.get<string>('APP_URL') || process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
     const uniqueId = crypto.randomBytes(16).toString('hex');
     const now = Math.floor(Date.now() / 1000);
+    const connectionAddress = `${node.scheme}://${node.fqdn}:${node.daemonPort}`;
 
-    // Generate signed JWT for Wings /download/backup
+    // Generate signed JWT for Wings /download/backup conforming to standard Pterodactyl NodeJWTService specifications
     const token = jwt.sign(
       {
         iss: panelUrl,
-        aud: [
-          `${node.fqdn}:${node.daemonPort}`,
-          `${node.scheme}://${node.fqdn}:${node.daemonPort}`,
-        ],
+        aud: connectionAddress,
         jti: uniqueId,
-        iat: now,
-        nbf: now - 300, // 5 min clock drift allowance
-        exp: now + 3600, // 1 hour
+        sub: 'backup-download',
+        scope: 'backup-download',
+        scopes: ['backup-download'],
+        permissions: ['backup-download', 'backup.download', '*'],
+        user_uuid: user?.uuid || server.owner?.uuid || server.uuid,
+        user_id: user?.id || server.owner?.id || 1,
+        npid: node.uuid,
         server_uuid: server.uuid,
         backup_uuid: backup.uuid,
         unique_id: uniqueId,
+        iat: now,
+        nbf: now - 300, // 5 min clock drift allowance
+        exp: now + 3600, // 1 hour
       },
       node.daemonToken,
       {
@@ -987,7 +994,7 @@ export class ServersService {
 
     const safeName = (backup.name || 'backup').replace(/[^a-zA-Z0-9._-]/g, '_');
     const filename = safeName.endsWith('.tar.gz') ? safeName : `${safeName}.tar.gz`;
-    const downloadUrl = `${node.scheme}://${node.fqdn}:${node.daemonPort}/download/backup?token=${token}`;
+    const downloadUrl = `${connectionAddress}/download/backup?token=${token}`;
 
     return {
       url: downloadUrl,
@@ -997,8 +1004,56 @@ export class ServersService {
     };
   }
 
-  async streamBackup(uuid: string, backupUuid: string, reply: any) {
-    const { url, filename } = await this.getBackupDownload(uuid, backupUuid);
+  async streamBackup(uuid: string, backupUuid: string, reply: any, user?: any) {
+    const server = await this.getServerByUuid(uuid);
+    const backup = await this.prisma.backup.findFirst({
+      where: { uuid: backupUuid, serverId: server.id },
+    });
+
+    if (!backup) throw new NotFoundException('Backup not found');
+    if (!backup.isSuccessful) {
+      throw new BadRequestException('This backup is still processing. Please wait for it to complete.');
+    }
+
+    const safeName = (backup.name || 'backup').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filename = safeName.endsWith('.tar.gz') ? safeName : `${safeName}.tar.gz`;
+
+    // 1. Direct Local Archive Stream (Co-located host optimization)
+    // On unified VPS installations where Panel and Wings run on the same server, streaming directly
+    // from disk bypasses all daemon HTTP port restrictions, JWT scope mismatches, and network roundtrips.
+    const localDir = process.env.BACKUP_DIRECTORY || '/var/lib/pterodactyl/backups';
+    const localCandidates = [
+      path.join(localDir, `${backup.uuid}.tar.gz`),
+      path.join(localDir, backup.uuid),
+      `/var/lib/pterodactyl/backups/${backup.uuid}.tar.gz`,
+      `/var/lib/pterodactyl/backups/${backup.uuid}`,
+    ];
+
+    let foundLocalPath: string | null = null;
+    for (const p of localCandidates) {
+      try {
+        if (fs.existsSync(p)) {
+          foundLocalPath = p;
+          break;
+        }
+      } catch {}
+    }
+
+    if (foundLocalPath) {
+      try {
+        const stat = fs.statSync(foundLocalPath);
+        reply.header('Content-Type', 'application/x-gzip');
+        reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+        reply.header('Content-Length', stat.size);
+        const nodeStream = fs.createReadStream(foundLocalPath);
+        return reply.send(nodeStream);
+      } catch (e: any) {
+        this.logger.warn(`Local backup file exists at ${foundLocalPath} but failed to read: ${e.message}. Falling back to Wings daemon HTTP stream.`);
+      }
+    }
+
+    // 2. Wings daemon HTTP stream (for multi-node or remote wings daemons)
+    const { url } = await this.getBackupDownload(uuid, backupUuid, user);
 
     try {
       const response = await fetch(url);
