@@ -28,6 +28,24 @@ export default function ServerBackupsPage({
   const [isCreating, setIsCreating] = useState(false);
   const [downloadingUuid, setDownloadingUuid] = useState<string | null>(null);
 
+  const { data: server } = useQuery({
+    queryKey: ['client-server', uuid],
+    queryFn: () => fetchApi<any>(`/api/client/servers/${uuid}`),
+  });
+
+  const { data: backups, isLoading } = useQuery({
+    queryKey: ['server-backups', uuid],
+    queryFn: () => fetchApi<any[]>(`/api/client/servers/${uuid}/backups`),
+    refetchInterval: (query) => {
+      const data = query.state.data as any[];
+      return data?.some((b: any) => !b.isSuccessful && !b.completedAt) ? 3000 : false;
+    },
+  });
+
+  const backupLimit = server?.backupLimit ?? 0;
+  const currentCount = (backups || []).length;
+  const isLimitReached = backupLimit <= 0 || currentCount >= backupLimit;
+
   const handleDownloadBackup = async (backup: any) => {
     setDownloadingUuid(backup.uuid);
     try {
@@ -42,57 +60,25 @@ export default function ServerBackupsPage({
         }
       }
 
-      const res = await fetchApi<{ url: string; filename: string }>(
-        `/api/client/servers/${uuid}/backups/${backup.uuid}/download`,
-      );
+      // Stream directly through Panel proxy to avoid mixed-content, daemon port blockages, and cross-origin issues
+      const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
+      const downloadUrl = `/api/client/servers/${uuid}/backups/${backup.uuid}/stream${tokenQuery}`;
 
-      // If panel is served over HTTPS and daemon is HTTP, direct browser navigation is blocked by mixed-content
-      const isMixedContent =
-        typeof window !== 'undefined' &&
-        window.location.protocol === 'https:' &&
-        res.url.startsWith('http://');
+      const safeName = (backup.name || 'backup').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filename = safeName.endsWith('.tar.gz') ? safeName : `${safeName}.tar.gz`;
 
-      if (!isMixedContent && res?.url) {
-        // Direct download from Wings daemon
-        const a = document.createElement('a');
-        a.href = res.url;
-        a.download = res.filename || `${backup.name || backup.uuid}.tar.gz`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } else {
-        // Fallback or HTTPS-safe proxy stream through panel API
-        const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
-        const proxyUrl = `/api/client/servers/${uuid}/backups/${backup.uuid}/stream${tokenQuery}`;
-        window.open(proxyUrl, '_blank');
-      }
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } catch (err: any) {
-      // Direct stream fallback
-      try {
-        let token = typeof window !== 'undefined' ? localStorage.getItem('obsidian_session_token') : null;
-        if (!token && typeof document !== 'undefined') {
-          const match = document.cookie.match(/(?:^|;\s*)session=([^;]+)/);
-          if (match && match[1]) token = decodeURIComponent(match[1]);
-        }
-        const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
-        const proxyUrl = `/api/client/servers/${uuid}/backups/${backup.uuid}/stream${tokenQuery}`;
-        window.open(proxyUrl, '_blank');
-      } catch (streamErr: any) {
-        alert(`Failed to download backup: ${err.message || streamErr.message}`);
-      }
+      alert(`Failed to download backup: ${err.message || 'Unknown error'}`);
     } finally {
-      setDownloadingUuid(null);
+      setTimeout(() => setDownloadingUuid(null), 1000);
     }
   };
-
-  const { data: backups, isLoading } = useQuery({
-    queryKey: ['server-backups', uuid],
-    queryFn: () => fetchApi<any[]>(`/api/client/servers/${uuid}/backups`),
-    refetchInterval: (query) => {
-      const data = query.state.data as any[];
-      return data?.some((b: any) => !b.isSuccessful && !b.completedAt) ? 3000 : false;
-    },
-  });
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -142,18 +128,38 @@ export default function ServerBackupsPage({
       {/* Header action */}
       <div className="flex items-center justify-between bg-surface border border-border rounded-card p-4">
         <div>
-          <h3 className="text-sm font-semibold text-text-primary">Server Backups</h3>
+          <div className="flex items-center gap-2.5">
+            <h3 className="text-sm font-semibold text-text-primary">Server Backups</h3>
+            {server && (
+              <Badge
+                variant={backupLimit <= 0 ? 'error' : currentCount >= backupLimit ? 'warning' : 'outline'}
+                className="text-[10px] font-mono tracking-wide"
+              >
+                {backupLimit <= 0
+                  ? 'Backups Disabled (0 Limit)'
+                  : `${currentCount} / ${backupLimit} Backups Used`}
+              </Badge>
+            )}
+          </div>
           <p className="text-xs text-text-muted mt-0.5">
-            Create snapshot archives of game files and databases
+            Create snapshot archives of game files and server data
           </p>
         </div>
 
         <Button
           variant="primary"
           size="sm"
+          disabled={isLimitReached}
           onClick={() => setIsCreating(true)}
+          title={
+            backupLimit <= 0
+              ? 'Backups are disabled for this server by an administrator.'
+              : currentCount >= backupLimit
+              ? `Backup limit reached (${currentCount}/${backupLimit}). Delete an existing backup to create a new one.`
+              : 'Create Backup'
+          }
         >
-          <Plus className="w-3.5 h-3.5" /> Create Backup
+          <Plus className="w-3.5 h-3.5 mr-1" /> Create Backup
         </Button>
       </div>
 
@@ -162,16 +168,24 @@ export default function ServerBackupsPage({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
           <div className="w-full max-w-md bg-surface border border-border rounded-card p-5 space-y-4">
             <h3 className="text-sm font-bold text-text-primary">Create New Backup</h3>
-            <div className="space-y-1.5">
-              <label className="text-xs text-text-secondary">Backup Name (Optional)</label>
-              <input
-                type="text"
-                value={backupName}
-                onChange={(e) => setBackupName(e.target.value)}
-                placeholder="e.g. Before 1.20 upgrade"
-                className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary focus:outline-none focus:border-primary"
-              />
-            </div>
+            {isLimitReached ? (
+              <div className="p-3 bg-status-error/10 border border-status-error/20 rounded-control text-xs text-status-error">
+                {backupLimit <= 0
+                  ? 'Backups are disabled for this server (backup limit is 0). Contact your administrator.'
+                  : `You have reached the server backup limit of ${backupLimit}. Please delete an existing backup before creating a new one.`}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <label className="text-xs text-text-secondary">Backup Name (Optional)</label>
+                <input
+                  type="text"
+                  value={backupName}
+                  onChange={(e) => setBackupName(e.target.value)}
+                  placeholder="e.g. Before 1.20 upgrade"
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-control text-xs text-text-primary focus:outline-none focus:border-primary"
+                />
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" size="sm" onClick={() => setIsCreating(false)}>
                 Cancel
@@ -179,10 +193,10 @@ export default function ServerBackupsPage({
               <Button
                 variant="primary"
                 size="sm"
-                disabled={createMutation.isPending}
+                disabled={createMutation.isPending || isLimitReached}
                 onClick={() => createMutation.mutate()}
               >
-                Start Backup
+                {createMutation.isPending ? 'Starting...' : 'Start Backup'}
               </Button>
             </div>
           </div>

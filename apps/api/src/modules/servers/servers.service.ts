@@ -5,6 +5,7 @@ import {
   ConflictException,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WingsRemoteService } from '../wings-remote/wings-remote.service';
 import { AuthService } from '../auth/auth.service';
@@ -33,6 +34,7 @@ export class ServersService {
     private readonly prisma: PrismaService,
     private readonly wingsRemoteService: WingsRemoteService,
     private readonly authService: AuthService,
+    private readonly config: ConfigService,
   ) {
     // Periodic background sweep for automatic server suspensions (every 60 seconds)
     setInterval(() => {
@@ -865,11 +867,14 @@ export class ServersService {
   async createBackup(uuid: string, name?: string, ignored?: string) {
     const server = await this.getServerByUuid(uuid);
 
-    if (server.backupLimit > 0) {
-      const count = await this.prisma.backup.count({ where: { serverId: server.id } });
-      if (count >= server.backupLimit) {
-        throw new BadRequestException(`Backup limit reached (${server.backupLimit})`);
-      }
+    const backupLimit = server.backupLimit ?? 0;
+    if (backupLimit <= 0) {
+      throw new BadRequestException('Backups are disabled for this server (backup limit is 0). Contact an administrator to allocate backup slots.');
+    }
+
+    const count = await this.prisma.backup.count({ where: { serverId: server.id } });
+    if (count >= backupLimit) {
+      throw new BadRequestException(`Backup limit reached (${count}/${backupLimit}). Delete an existing backup before creating a new one.`);
     }
 
     const backupUuid = crypto.randomUUID();
@@ -954,19 +959,29 @@ export class ServersService {
 
     if (!node) throw new NotFoundException('Hosting node not found');
 
+    const panelUrl = (this.config.get<string>('APP_URL') || process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    const uniqueId = crypto.randomBytes(16).toString('hex');
+    const now = Math.floor(Date.now() / 1000);
+
     // Generate signed JWT for Wings /download/backup
     const token = jwt.sign(
       {
+        iss: panelUrl,
+        aud: [
+          `${node.fqdn}:${node.daemonPort}`,
+          `${node.scheme}://${node.fqdn}:${node.daemonPort}`,
+        ],
+        jti: uniqueId,
+        iat: now,
+        nbf: now - 300, // 5 min clock drift allowance
+        exp: now + 3600, // 1 hour
         server_uuid: server.uuid,
         backup_uuid: backup.uuid,
-        unique_id: crypto.randomBytes(8).toString('hex'),
+        unique_id: uniqueId,
       },
       node.daemonToken,
       {
         algorithm: 'HS256',
-        expiresIn: '1h',
-        issuer: 'obsidian-panel',
-        subject: 'backup-download',
       },
     );
 
@@ -988,7 +1003,9 @@ export class ServersService {
     try {
       const response = await fetch(url);
       if (!response.ok) {
-        throw new BadRequestException(`Wings daemon download failed with HTTP ${response.status}`);
+        const text = await response.text().catch(() => '');
+        this.logger.error(`Wings daemon download failed with HTTP ${response.status}: ${text}`);
+        throw new BadRequestException(`Wings daemon download failed with HTTP ${response.status}: ${text || response.statusText}`);
       }
 
       const contentLength = response.headers.get('content-length');
@@ -1378,15 +1395,15 @@ export class ServersService {
     }
 
     if (typeof dto.nodeId === 'number') updateData.nodeId = dto.nodeId;
-    if (typeof dto.memory === 'number') updateData.memory = dto.memory;
-    if (typeof dto.swap === 'number') updateData.swap = dto.swap;
-    if (typeof dto.cpu === 'number') updateData.cpu = dto.cpu;
-    if (typeof dto.disk === 'number') updateData.disk = dto.disk;
-    if (typeof dto.io === 'number') updateData.io = dto.io;
+    if (dto.memory !== undefined && dto.memory !== null) updateData.memory = clampInt4(dto.memory, 512);
+    if (dto.swap !== undefined && dto.swap !== null) updateData.swap = clampInt4(dto.swap, 0);
+    if (dto.cpu !== undefined && dto.cpu !== null) updateData.cpu = clampInt4(dto.cpu, 0);
+    if (dto.disk !== undefined && dto.disk !== null) updateData.disk = clampInt4(dto.disk, 1024);
+    if (dto.io !== undefined && dto.io !== null) updateData.io = clampInt4(dto.io, 500, 1000);
     if (typeof dto.threads !== 'undefined') updateData.threads = dto.threads;
-    if (typeof dto.databases === 'number') updateData.databaseLimit = dto.databases;
-    if (typeof dto.allocationsLimit === 'number') updateData.allocationLimit = dto.allocationsLimit;
-    if (typeof dto.backups === 'number') updateData.backupLimit = dto.backups;
+    if (dto.databases !== undefined && dto.databases !== null) updateData.databaseLimit = clampInt4(dto.databases, 0);
+    if (dto.allocationsLimit !== undefined && dto.allocationsLimit !== null) updateData.allocationLimit = clampInt4(dto.allocationsLimit, 0);
+    if (dto.backups !== undefined && dto.backups !== null) updateData.backupLimit = clampInt4(dto.backups, 0);
 
     const updated = await this.prisma.server.update({
       where: { id: server.id },
