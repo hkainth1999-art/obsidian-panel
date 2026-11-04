@@ -12,6 +12,8 @@ import {
   XCircle,
   Lock,
   Download,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 import { Button } from '../../../../../components/ui/button';
 import { Badge } from '../../../../../components/ui/badge';
@@ -27,6 +29,7 @@ export default function ServerBackupsPage({
   const [backupName, setBackupName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [downloadingUuid, setDownloadingUuid] = useState<string | null>(null);
+  const [copiedUuid, setCopiedUuid] = useState<string | null>(null);
 
   const { data: server } = useQuery({
     queryKey: ['client-server', uuid],
@@ -49,6 +52,36 @@ export default function ServerBackupsPage({
   const handleDownloadBackup = async (backup: any) => {
     setDownloadingUuid(backup.uuid);
     try {
+      // 1. Direct Node FQDN Download (primary method from Wings daemon on remote node)
+      let directSuccess = false;
+      try {
+        const res = await fetchApi<{ url: string; filename: string }>(
+          `/api/client/servers/${uuid}/backups/${backup.uuid}/download`,
+        );
+
+        if (res?.url) {
+          const isMixedContent =
+            typeof window !== 'undefined' &&
+            window.location.protocol === 'https:' &&
+            res.url.startsWith('http://');
+
+          if (!isMixedContent) {
+            const a = document.createElement('a');
+            a.href = res.url;
+            a.download = res.filename || `${backup.name || 'backup'}.tar.gz`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            directSuccess = true;
+          }
+        }
+      } catch (err: any) {
+        console.warn('Direct node download link generation failed, trying proxy stream fallback:', err);
+      }
+
+      if (directSuccess) return;
+
+      // 2. Fallback: Stream through panel proxy if mixed-content or direct network blockage
       let token = typeof window !== 'undefined' ? localStorage.getItem('obsidian_session_token') : null;
       if (!token && typeof document !== 'undefined') {
         const match = document.cookie.match(/(?:^|;\s*)session=([^;]+)/);
@@ -60,7 +93,6 @@ export default function ServerBackupsPage({
         }
       }
 
-      // Stream directly through Panel proxy to avoid mixed-content, daemon port blockages, and cross-origin issues
       const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
       const downloadUrl = `/api/client/servers/${uuid}/backups/${backup.uuid}/stream${tokenQuery}`;
 
@@ -77,6 +109,21 @@ export default function ServerBackupsPage({
       alert(`Failed to download backup: ${err.message || 'Unknown error'}`);
     } finally {
       setTimeout(() => setDownloadingUuid(null), 1000);
+    }
+  };
+
+  const handleCopyLink = async (backup: any) => {
+    try {
+      const res = await fetchApi<{ url: string; filename: string }>(
+        `/api/client/servers/${uuid}/backups/${backup.uuid}/download`,
+      );
+      if (res?.url) {
+        await navigator.clipboard.writeText(res.url);
+        setCopiedUuid(backup.uuid);
+        setTimeout(() => setCopiedUuid(null), 2500);
+      }
+    } catch (err: any) {
+      alert(`Failed to get node download link: ${err.message || 'Unknown error'}`);
     }
   };
 
@@ -246,17 +293,30 @@ export default function ServerBackupsPage({
                   </td>
                   <td className="px-5 py-3.5 text-right space-x-2">
                     {backup.isSuccessful && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={downloadingUuid === backup.uuid}
-                        onClick={() => handleDownloadBackup(backup)}
-                        title="Download backup archive (.tar.gz)"
-                        className="text-primary hover:text-primary-hover border-primary/30"
-                      >
-                        <Download className="w-3.5 h-3.5 mr-1" />
-                        {downloadingUuid === backup.uuid ? 'Downloading...' : 'Download'}
-                      </Button>
+                      <div className="inline-flex items-center gap-1.5 align-middle">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={downloadingUuid === backup.uuid}
+                          onClick={() => handleDownloadBackup(backup)}
+                          title="Download backup archive (.tar.gz) using Node FQDN"
+                          className="text-primary hover:text-primary-hover border-primary/30"
+                        >
+                          <Download className="w-3.5 h-3.5 mr-1" />
+                          {downloadingUuid === backup.uuid ? 'Downloading...' : 'Download'}
+                        </Button>
+                        <button
+                          onClick={() => handleCopyLink(backup)}
+                          title="Copy direct Node download link (for curl / wget)"
+                          className="p-1.5 text-text-muted hover:text-primary transition-colors rounded hover:bg-surface-elevated"
+                        >
+                          {copiedUuid === backup.uuid ? (
+                            <CheckCircle className="w-3.5 h-3.5 text-status-success" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
                     )}
                     <Button
                       variant="secondary"
