@@ -13,10 +13,7 @@ export class ApiKeysService {
   async listApplicationKeys() {
     const keys = await this.prisma.apiKey.findMany({
       where: {
-        OR: [
-          { keyType: 'application' },
-          { identifier: { startsWith: 'ptla_' } },
-        ],
+        identifier: { startsWith: 'ptla_' },
       },
       include: {
         user: { select: { id: true, username: true, email: true } },
@@ -59,7 +56,6 @@ export class ApiKeysService {
         identifier,
         tokenHash,
         userId,
-        keyType: 'application',
         description: description.trim(),
         allowedIps: cleanIps,
       },
@@ -99,10 +95,7 @@ export class ApiKeysService {
     const keys = await this.prisma.apiKey.findMany({
       where: {
         userId,
-        AND: [
-          { keyType: { not: 'application' } },
-          { identifier: { not: { startsWith: 'ptla_' } } },
-        ],
+        NOT: { identifier: { startsWith: 'ptla_' } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -141,7 +134,6 @@ export class ApiKeysService {
         identifier,
         tokenHash,
         userId,
-        keyType: 'account',
         description: description.trim(),
         allowedIps: cleanIps,
       },

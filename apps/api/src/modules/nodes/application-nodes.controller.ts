@@ -32,7 +32,7 @@ export class ApplicationNodesController {
   constructor(
     private readonly nodesService: NodesService,
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
 
   @Get()
   @UseGuards(ApplicationApiGuard)

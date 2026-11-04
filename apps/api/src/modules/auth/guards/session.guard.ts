@@ -71,9 +71,7 @@ export class SessionGuard implements CanActivate {
       // Check if token is an API key (ptla_... application key or ptlc_... client key)
       const apiKeyResult = await this.authService.validateApiKey(sessionToken, request.ip);
       if (apiKeyResult) {
-        const isAppKey =
-          apiKeyResult.apiKey.keyType === 'application' ||
-          apiKeyResult.apiKey.identifier.startsWith('ptla_');
+        const isAppKey = apiKeyResult.apiKey.identifier.startsWith('ptla_');
 
         request.user = {
           ...apiKeyResult.user,

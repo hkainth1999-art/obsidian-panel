@@ -44,7 +44,6 @@ export class ApplicationApiGuard implements CanActivate {
     const apiKeyResult = await this.authService.validateApiKey(token, request.ip);
     if (apiKeyResult) {
       const isAppKey =
-        apiKeyResult.apiKey.keyType === 'application' ||
         apiKeyResult.apiKey.identifier.startsWith('ptla_') ||
         Boolean(apiKeyResult.user.isAdmin);
 
