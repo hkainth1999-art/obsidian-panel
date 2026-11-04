@@ -14,6 +14,8 @@ import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as http from 'http';
+import * as https from 'https';
 import { Readable } from 'stream';
 
 // Maximum signed 32-bit integer supported by PostgreSQL INT4 (2,147,483,647 MiB = ~2 Petabytes)
@@ -962,7 +964,7 @@ export class ServersService {
     if (!node) throw new NotFoundException('Hosting node not found');
 
     const panelUrl = (this.config.get<string>('APP_URL') || process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
-    const uniqueId = crypto.randomBytes(16).toString('hex');
+    const uniqueId = crypto.randomBytes(8).toString('hex');
     const now = Math.floor(Date.now() / 1000);
     const connectionAddress = `${node.scheme}://${node.fqdn}:${node.daemonPort}`;
 
@@ -970,7 +972,11 @@ export class ServersService {
     const token = jwt.sign(
       {
         iss: panelUrl,
-        aud: connectionAddress,
+        aud: [
+          connectionAddress,
+          `${node.scheme}://${node.fqdn}:${node.daemonPort}`,
+          `${node.scheme}://${node.fqdn}`,
+        ],
         jti: uniqueId,
         sub: 'backup-download',
         scope: 'backup-download',
@@ -1055,31 +1061,79 @@ export class ServersService {
     // 2. Wings daemon HTTP stream (for multi-node or remote wings daemons)
     const { url } = await this.getBackupDownload(uuid, backupUuid, user);
 
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        this.logger.error(`Wings daemon download failed with HTTP ${response.status}: ${text}`);
-        throw new BadRequestException(`Wings daemon download failed with HTTP ${response.status}: ${text || response.statusText}`);
-      }
+    return new Promise<void>((resolve, reject) => {
+      const parsedUrl = new URL(url);
+      const isHttps = parsedUrl.protocol === 'https:';
+      const httpModule = isHttps ? https : http;
 
-      const contentLength = response.headers.get('content-length');
-      reply.header('Content-Type', 'application/x-gzip');
-      reply.header('Content-Disposition', `attachment; filename="${filename}"`);
-      if (contentLength) {
-        reply.header('Content-Length', contentLength);
-      }
+      const reqOptions: http.RequestOptions = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (isHttps ? 443 : 80),
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Obsidian-Panel/0.1.0',
+          Accept: 'application/x-gzip, application/octet-stream, */*',
+        },
+        // Allow connections to remote nodes with self-signed TLS certificates
+        ...(isHttps ? { rejectUnauthorized: false } : {}),
+      };
 
-      if (!response.body) {
-        throw new BadRequestException('Empty response body from Wings daemon');
-      }
+      const daemonReq = httpModule.request(reqOptions, (daemonRes) => {
+        if (daemonRes.statusCode && (daemonRes.statusCode < 200 || daemonRes.statusCode >= 300)) {
+          let errBody = '';
+          daemonRes.on('data', (c) => (errBody += c));
+          daemonRes.on('end', () => {
+            this.logger.error(`Wings daemon download failed with HTTP ${daemonRes.statusCode}: ${errBody}`);
+            if (daemonRes.statusCode === 404) {
+              reply.status(404).send({
+                statusCode: 404,
+                error: 'Not Found',
+                message: 'Backup archive not found on node. It may have been pruned or deleted.',
+              });
+            } else {
+              reply.status(502).send({
+                statusCode: 502,
+                error: 'Bad Gateway',
+                message: `Node daemon rejected download with HTTP ${daemonRes.statusCode}: ${errBody.slice(0, 200)}`,
+              });
+            }
+            resolve();
+          });
+          return;
+        }
 
-      const nodeStream = Readable.fromWeb(response.body as any);
-      return reply.send(nodeStream);
-    } catch (err: any) {
-      this.logger.error(`Failed to stream backup ${backupUuid}: ${err.message}`);
-      throw new BadRequestException(`Could not stream backup: ${err.message}`);
-    }
+        reply.header('Content-Type', 'application/x-gzip');
+        reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+        if (daemonRes.headers['content-length']) {
+          reply.header('Content-Length', daemonRes.headers['content-length']);
+        }
+
+        // Pipe directly from daemon stream to client response
+        daemonRes.pipe(reply.raw);
+        daemonRes.on('end', () => resolve());
+        daemonRes.on('error', (err) => {
+          this.logger.error(`Error streaming backup from Wings: ${err.message}`);
+          reject(err);
+        });
+      });
+
+      daemonReq.on('error', (err) => {
+        this.logger.error(`Failed to connect to Wings daemon for backup download: ${err.message}`);
+        reply.status(502).send({
+          statusCode: 502,
+          error: 'Bad Gateway',
+          message: `Unable to connect to hosting node: ${err.message}`,
+        });
+        resolve();
+      });
+
+      daemonReq.setTimeout(60000, () => {
+        daemonReq.destroy(new Error('Connection to node timed out after 60s'));
+      });
+
+      daemonReq.end();
+    });
   }
 
   // ─── Subusers ──────────────────────────────────────────────────────

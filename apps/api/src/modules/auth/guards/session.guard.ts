@@ -20,10 +20,27 @@ export class SessionGuard implements CanActivate {
     // 1. Try session cookie from Fastify parsed cookies
     let sessionToken = request.cookies?.session;
 
+    // Fastify unsignCookie support
+    if (sessionToken && typeof request.unsignCookie === 'function') {
+      try {
+        const unsigned = request.unsignCookie(sessionToken);
+        if (unsigned && unsigned.valid && unsigned.value) {
+          sessionToken = unsigned.value;
+        }
+      } catch {}
+    }
+
     // 2. Try raw Cookie header
     if (!sessionToken && request.headers?.cookie) {
       const match = request.headers.cookie.match(/(?:^|;\s*)session=([^;]+)/);
       if (match) sessionToken = decodeURIComponent(match[1]);
+    }
+
+    // Strip signed cookie prefix "s:" and trailing signature if present
+    if (sessionToken && typeof sessionToken === 'string' && sessionToken.startsWith('s:')) {
+      const withoutPrefix = sessionToken.slice(2);
+      const dotIdx = withoutPrefix.indexOf('.');
+      sessionToken = dotIdx !== -1 ? withoutPrefix.substring(0, dotIdx) : withoutPrefix;
     }
 
     // 3. Try Bearer token from Authorization header
@@ -48,6 +65,21 @@ export class SessionGuard implements CanActivate {
       const user = await this.authService.validateSession(sessionToken);
       if (user) {
         request.user = user;
+        return true;
+      }
+
+      // Check if token is an API key (ptla_... application key or ptlc_... client key)
+      const apiKeyResult = await this.authService.validateApiKey(sessionToken, request.ip);
+      if (apiKeyResult) {
+        const isAppKey =
+          apiKeyResult.apiKey.keyType === 'application' ||
+          apiKeyResult.apiKey.identifier.startsWith('ptla_');
+
+        request.user = {
+          ...apiKeyResult.user,
+          isAdmin: isAppKey ? true : Boolean(apiKeyResult.user.isAdmin),
+        };
+        request.apiKey = apiKeyResult.apiKey;
         return true;
       }
     }

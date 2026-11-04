@@ -122,6 +122,49 @@ export class AuthService {
   }
 
   /**
+   * Validate an Application (ptla_...) or Client (ptlc_...) API key.
+   */
+  async validateApiKey(
+    token: string,
+    clientIp?: string,
+  ): Promise<{ user: User; apiKey: any } | null> {
+    if (!token || typeof token !== 'string') return null;
+
+    const cleanToken = token.trim();
+    const tokenHash = createHash('sha256').update(cleanToken).digest('hex');
+
+    const apiKey = await this.prisma.apiKey.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!apiKey) return null;
+
+    // Verify allowed IPs if specified
+    if (apiKey.allowedIps && apiKey.allowedIps.length > 0 && clientIp) {
+      const cleanIp = clientIp.replace(/^::ffff:/, '').trim();
+      const isAllowed = apiKey.allowedIps.some((allowed) => {
+        const cleanAllowed = allowed.replace(/^::ffff:/, '').trim();
+        return cleanAllowed === '*' || cleanAllowed === cleanIp;
+      });
+      if (!isAllowed) {
+        this.logger.warn(`API key [${apiKey.identifier}] rejected from unauthorized IP: ${clientIp}`);
+        return null;
+      }
+    }
+
+    // Update last used timestamp asynchronously
+    this.prisma.apiKey
+      .update({
+        where: { id: apiKey.id },
+        data: { lastUsedAt: new Date() },
+      })
+      .catch(() => {});
+
+    return { user: apiKey.user, apiKey };
+  }
+
+  /**
    * Revoke a session.
    */
   async revokeSession(sessionId: string, userId: number): Promise<void> {

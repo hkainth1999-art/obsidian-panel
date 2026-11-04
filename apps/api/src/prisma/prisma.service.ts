@@ -19,6 +19,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     try {
       await this.$connect();
       this.logger.log('Connected to PostgreSQL');
+
+      // Idempotently ensure api_keys has key_type column
+      try {
+        await this.$executeRawUnsafe(
+          'ALTER TABLE "api_keys" ADD COLUMN IF NOT EXISTS "key_type" TEXT NOT NULL DEFAULT \'account\';',
+        );
+      } catch (colErr: any) {
+        this.logger.debug?.(`api_keys schema check: ${colErr.message}`);
+      }
     } catch (err: any) {
       if (process.env.NODE_ENV === 'production') {
         throw err;

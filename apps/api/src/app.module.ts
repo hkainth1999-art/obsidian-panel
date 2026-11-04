@@ -10,6 +10,7 @@ import { AllocationsModule } from './modules/allocations/allocations.module';
 import { NestsModule } from './modules/nests/nests.module';
 import { EggsModule } from './modules/eggs/eggs.module';
 import { ServersModule } from './modules/servers/servers.module';
+import { ApplicationApiModule } from './modules/application-api/application-api.module';
 import { WingsRemoteModule } from './modules/wings-remote/wings-remote.module';
 import { HealthModule } from './modules/health/health.module';
 import { MailModule } from './modules/mail/mail.module';
@@ -46,6 +47,7 @@ import { SecurityModule } from './modules/security/security.module';
     NestsModule,
     EggsModule,
     ServersModule,
+    ApplicationApiModule,
     WingsRemoteModule,
     HealthModule,
   ],

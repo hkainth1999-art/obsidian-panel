@@ -20,3 +20,17 @@ export function formatMemory(mib: number): string {
   }
   return `${mib} MiB`;
 }
+
+export function formatDate(date: string | Date | null | undefined): string {
+  if (!date) return 'Never';
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (isNaN(d.getTime())) return 'Invalid date';
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+

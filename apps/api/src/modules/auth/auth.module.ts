@@ -3,8 +3,11 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { ApiKeysService } from './api-keys.service';
+import { AdminApiKeysController, AccountApiKeysController } from './api-keys.controller';
 import { SessionGuard } from './guards/session.guard';
 import { AdminGuard } from './guards/admin.guard';
+import { ApplicationApiGuard } from './guards/application-api.guard';
 
 @Module({
   imports: [
@@ -20,8 +23,8 @@ import { AdminGuard } from './guards/admin.guard';
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, SessionGuard, AdminGuard],
-  exports: [AuthService, JwtModule, SessionGuard, AdminGuard],
+  controllers: [AuthController, AdminApiKeysController, AccountApiKeysController],
+  providers: [AuthService, ApiKeysService, SessionGuard, AdminGuard, ApplicationApiGuard],
+  exports: [AuthService, ApiKeysService, JwtModule, SessionGuard, AdminGuard, ApplicationApiGuard],
 })
 export class AuthModule {}

@@ -52,36 +52,10 @@ export default function ServerBackupsPage({
   const handleDownloadBackup = async (backup: any) => {
     setDownloadingUuid(backup.uuid);
     try {
-      // 1. Direct Node FQDN Download (primary method from Wings daemon on remote node)
-      let directSuccess = false;
-      try {
-        const res = await fetchApi<{ url: string; filename: string }>(
-          `/api/client/servers/${uuid}/backups/${backup.uuid}/download`,
-        );
-
-        if (res?.url) {
-          const isMixedContent =
-            typeof window !== 'undefined' &&
-            window.location.protocol === 'https:' &&
-            res.url.startsWith('http://');
-
-          if (!isMixedContent) {
-            const a = document.createElement('a');
-            a.href = res.url;
-            a.download = res.filename || `${backup.name || 'backup'}.tar.gz`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            directSuccess = true;
-          }
-        }
-      } catch (err: any) {
-        console.warn('Direct node download link generation failed, trying proxy stream fallback:', err);
-      }
-
-      if (directSuccess) return;
-
-      // 2. Fallback: Stream through panel proxy if mixed-content or direct network blockage
+      // Stream through panel proxy:
+      // Streams directly through the Panel API over standard HTTPS (port 443).
+      // This bypasses remote node firewall restrictions (e.g. port 8080 blocks), SSL mismatch issues,
+      // and ensures reliable 1-click downloads for any network topology.
       let token = typeof window !== 'undefined' ? localStorage.getItem('obsidian_session_token') : null;
       if (!token && typeof document !== 'undefined') {
         const match = document.cookie.match(/(?:^|;\s*)session=([^;]+)/);
@@ -108,7 +82,7 @@ export default function ServerBackupsPage({
     } catch (err: any) {
       alert(`Failed to download backup: ${err.message || 'Unknown error'}`);
     } finally {
-      setTimeout(() => setDownloadingUuid(null), 1000);
+      setTimeout(() => setDownloadingUuid(null), 1200);
     }
   };
 
