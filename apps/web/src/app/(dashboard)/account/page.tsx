@@ -2,7 +2,20 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../contexts/auth-context';
-import { User, Mail, Shield, Globe, Image as ImageIcon, Upload, Trash2, Check, Sparkles } from 'lucide-react';
+import {
+  User,
+  Mail,
+  Shield,
+  Globe,
+  Image as ImageIcon,
+  Upload,
+  Trash2,
+  Check,
+  Sparkles,
+  Lock,
+  KeyRound,
+  AlertCircle,
+} from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -11,16 +24,40 @@ import { fetchApi } from '../../../lib/api';
 export default function AccountPage() {
   const { user, refreshUser } = useAuth();
 
+  // Avatar & Appearance State
   const [avatarUrl, setAvatarUrl] = useState('');
   const [language, setLanguage] = useState('en');
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileSuccess, setProfileSuccess] = useState(false);
+  const [profileError, setProfileError] = useState('');
+
+  // Username State
+  const [newUsername, setNewUsername] = useState('');
+  const [isSavingUsername, setIsSavingUsername] = useState(false);
+  const [usernameSuccess, setUsernameSuccess] = useState(false);
+  const [usernameError, setUsernameError] = useState('');
+
+  // Email State
+  const [newEmail, setNewEmail] = useState('');
+  const [emailCurrentPassword, setEmailCurrentPassword] = useState('');
+  const [isSavingEmail, setIsSavingEmail] = useState(false);
+  const [emailSuccess, setEmailSuccess] = useState(false);
+  const [emailError, setEmailError] = useState('');
+
+  // Password State
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
 
   useEffect(() => {
     if (user) {
       setAvatarUrl(user.avatarUrl || '');
       setLanguage(user.language || 'en');
+      setNewUsername(user.username || '');
+      setNewEmail(user.email || '');
     }
   }, [user]);
 
@@ -29,16 +66,16 @@ export default function AccountPage() {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      setErrorMsg('Please select a valid image or GIF file.');
+      setProfileError('Please select a valid image or GIF file.');
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg('Image size must be less than 5MB.');
+      setProfileError('Image size must be less than 5MB.');
       return;
     }
 
-    setErrorMsg('');
+    setProfileError('');
     const reader = new FileReader();
     reader.onload = (event) => {
       if (typeof event.target?.result === 'string') {
@@ -48,11 +85,12 @@ export default function AccountPage() {
     reader.readAsDataURL(file);
   };
 
+  // 1. Update Profile (Avatar & Language)
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSaving(true);
-    setErrorMsg('');
-    setSaveSuccess(false);
+    setIsSavingProfile(true);
+    setProfileError('');
+    setProfileSuccess(false);
 
     try {
       await fetchApi('/api/users/profile', {
@@ -64,27 +102,369 @@ export default function AccountPage() {
       });
 
       await refreshUser();
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      setProfileSuccess(true);
+      setTimeout(() => setProfileSuccess(false), 3000);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to update profile settings.');
+      setProfileError(err.message || 'Failed to update profile settings.');
     } finally {
-      setIsSaving(false);
+      setIsSavingProfile(false);
+    }
+  };
+
+  // 2. Update Username
+  const handleUpdateUsername = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUsername.trim()) return;
+
+    setIsSavingUsername(true);
+    setUsernameError('');
+    setUsernameSuccess(false);
+
+    try {
+      await fetchApi('/api/account/username', {
+        method: 'PATCH',
+        body: JSON.stringify({ username: newUsername.trim() }),
+      });
+
+      await refreshUser();
+      setUsernameSuccess(true);
+      setTimeout(() => setUsernameSuccess(false), 3000);
+    } catch (err: any) {
+      setUsernameError(err.message || 'Failed to update username.');
+    } finally {
+      setIsSavingUsername(false);
+    }
+  };
+
+  // 3. Update Email (requires current password)
+  const handleUpdateEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEmail.trim() || !emailCurrentPassword) {
+      setEmailError('Please provide your new email and current password.');
+      return;
+    }
+
+    setIsSavingEmail(true);
+    setEmailError('');
+    setEmailSuccess(false);
+
+    try {
+      await fetchApi('/api/account/email', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          email: newEmail.trim(),
+          currentPassword: emailCurrentPassword,
+        }),
+      });
+
+      await refreshUser();
+      setEmailCurrentPassword('');
+      setEmailSuccess(true);
+      setTimeout(() => setEmailSuccess(false), 3000);
+    } catch (err: any) {
+      setEmailError(err.message || 'Failed to update email address.');
+    } finally {
+      setIsSavingEmail(false);
+    }
+  };
+
+  // 4. Update Password (requires current password)
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentPassword) {
+      setPasswordError('Please provide your current password.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New passwords do not match.');
+      return;
+    }
+
+    setIsSavingPassword(true);
+    setPasswordError('');
+    setPasswordSuccess(false);
+
+    try {
+      await fetchApi('/api/account/password', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      });
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordSuccess(true);
+      setTimeout(() => setPasswordSuccess(false), 3000);
+    } catch (err: any) {
+      setPasswordError(err.message || 'Failed to update password.');
+    } finally {
+      setIsSavingPassword(false);
     }
   };
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-xl font-bold tracking-tight text-text-primary">
-          Account Profile &amp; Customization
+          Account Settings &amp; Security
         </h1>
         <p className="text-xs text-text-muted mt-0.5">
-          Customize your profile avatar (supports static images &amp; animated GIFs), language preferences, and view identity roles
+          Manage your account credentials, login credentials, and profile customization
         </p>
       </div>
 
-      {/* Profile Customization Card */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Update Username Card */}
+        <Card className="flex flex-col justify-between">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4 text-primary" />
+              <div>
+                <CardTitle>Change Username</CardTitle>
+                <CardDescription>
+                  Update your public display and login username
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+
+          <form onSubmit={handleUpdateUsername} className="p-4 pt-0 space-y-4 text-xs flex-1 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-text-secondary block mb-1">
+                  Current Username
+                </label>
+                <div className="p-2 bg-surface-elevated border border-border rounded-control font-mono text-text-muted">
+                  {user?.username}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-text-secondary block mb-1">
+                  New Username <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  minLength={3}
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                  placeholder="Enter new username"
+                  className="w-full px-3 py-2 bg-surface border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                />
+                <span className="text-[10px] text-text-muted mt-0.5 block">
+                  Letters, numbers, underscores, and hyphens (min 3 chars).
+                </span>
+              </div>
+
+              {usernameError && (
+                <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-control text-xs text-rose-400 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{usernameError}</span>
+                </div>
+              )}
+
+              {usernameSuccess && (
+                <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-control text-xs text-emerald-400 flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 shrink-0" />
+                  <span>Username updated successfully!</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={isSavingUsername || !newUsername.trim() || newUsername === user?.username}
+              >
+                {isSavingUsername ? 'Saving...' : 'Update Username'}
+              </Button>
+            </div>
+          </form>
+        </Card>
+
+        {/* Update Email Card */}
+        <Card className="flex flex-col justify-between">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4 text-primary" />
+              <div>
+                <CardTitle>Change Email Address</CardTitle>
+                <CardDescription>
+                  Requires your current password for security verification
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+
+          <form onSubmit={handleUpdateEmail} className="p-4 pt-0 space-y-4 text-xs flex-1 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-text-secondary block mb-1">
+                  New Email Address <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="yourname@domain.com"
+                  className="w-full px-3 py-2 bg-surface border border-border rounded-control text-xs text-text-primary font-mono focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-text-secondary block mb-1">
+                  Current Password <span className="text-red-400">*</span>
+                </label>
+                <div className="relative">
+                  <Lock className="w-3.5 h-3.5 text-text-muted absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type="password"
+                    required
+                    value={emailCurrentPassword}
+                    onChange={(e) => setEmailCurrentPassword(e.target.value)}
+                    placeholder="Enter current password to confirm"
+                    className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-control text-xs text-text-primary focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {emailError && (
+                <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-control text-xs text-rose-400 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{emailError}</span>
+                </div>
+              )}
+
+              {emailSuccess && (
+                <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-control text-xs text-emerald-400 flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 shrink-0" />
+                  <span>Email address updated successfully!</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={isSavingEmail || !newEmail.trim() || !emailCurrentPassword}
+              >
+                {isSavingEmail ? 'Saving...' : 'Update Email'}
+              </Button>
+            </div>
+          </form>
+        </Card>
+      </div>
+
+      {/* Change Password Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-primary" />
+            <div>
+              <CardTitle>Change Password</CardTitle>
+              <CardDescription>
+                Update your account password with your current password verification
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+
+        <form onSubmit={handleUpdatePassword} className="p-4 pt-0 space-y-4 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="text-xs font-medium text-text-secondary block mb-1">
+                Current Password <span className="text-red-400">*</span>
+              </label>
+              <div className="relative">
+                <Lock className="w-3.5 h-3.5 text-text-muted absolute left-3 top-2.5 pointer-events-none" />
+                <input
+                  type="password"
+                  required
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Current password"
+                  className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-control text-xs text-text-primary focus:outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-text-secondary block mb-1">
+                New Password <span className="text-red-400">*</span>
+              </label>
+              <div className="relative">
+                <Lock className="w-3.5 h-3.5 text-text-muted absolute left-3 top-2.5 pointer-events-none" />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-control text-xs text-text-primary focus:outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-text-secondary block mb-1">
+                Confirm New Password <span className="text-red-400">*</span>
+              </label>
+              <div className="relative">
+                <Lock className="w-3.5 h-3.5 text-text-muted absolute left-3 top-2.5 pointer-events-none" />
+                <input
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat new password"
+                  className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-control text-xs text-text-primary focus:outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+          </div>
+
+          {passwordError && (
+            <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-control text-xs text-rose-400 flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{passwordError}</span>
+            </div>
+          )}
+
+          {passwordSuccess && (
+            <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-control text-xs text-emerald-400 flex items-center gap-1.5">
+              <Check className="w-3.5 h-3.5 shrink-0" />
+              <span>Password updated successfully!</span>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={isSavingPassword || !currentPassword || !newPassword || newPassword.length < 8}
+            >
+              {isSavingPassword ? 'Updating...' : 'Update Password'}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      {/* Profile Customization Card (Avatar & Language) */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -92,14 +472,13 @@ export default function AccountPage() {
             <div>
               <CardTitle>Avatar &amp; Appearance</CardTitle>
               <CardDescription>
-                Upload or link a custom profile picture or animated GIF to personalize your session across the panel.
+                Upload or link a custom profile picture or animated GIF to personalize your session
               </CardDescription>
             </div>
           </div>
         </CardHeader>
 
-        <form onSubmit={handleSaveProfile} className="space-y-5 pt-2 text-xs">
-          {/* Avatar Preview & Controls */}
+        <form onSubmit={handleSaveProfile} className="space-y-5 p-4 pt-0 text-xs">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 p-4 bg-surface-elevated/50 border border-border rounded-control">
             <div className="relative group shrink-0">
               <div className="w-20 h-20 rounded-2xl bg-surface border-2 border-primary/30 shadow-[0_0_20px_rgba(34,197,94,0.15)] flex items-center justify-center font-mono text-xl font-bold text-primary overflow-hidden">
@@ -108,7 +487,7 @@ export default function AccountPage() {
                     src={avatarUrl}
                     alt="Profile Avatar"
                     className="w-full h-full object-cover"
-                    onError={() => setErrorMsg('Failed to load image preview from provided URL.')}
+                    onError={() => setProfileError('Failed to load image preview from provided URL.')}
                   />
                 ) : (
                   user?.username ? user.username.slice(0, 2).toUpperCase() : 'U'
@@ -180,16 +559,16 @@ export default function AccountPage() {
             </div>
           </div>
 
-          {errorMsg && (
+          {profileError && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-control text-xs text-rose-400">
-              {errorMsg}
+              {profileError}
             </div>
           )}
 
-          {saveSuccess && (
+          {profileSuccess && (
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-control text-xs text-emerald-400 flex items-center gap-2">
               <Check className="w-4 h-4" />
-              <span>Profile settings and custom avatar updated successfully!</span>
+              <span>Profile settings updated successfully!</span>
             </div>
           )}
 
@@ -197,17 +576,17 @@ export default function AccountPage() {
             <Button
               type="submit"
               variant="primary"
-              size="md"
-              disabled={isSaving}
+              size="sm"
+              disabled={isSavingProfile}
             >
               <Check className="w-4 h-4 mr-1.5" />
-              {isSaving ? 'Saving Changes...' : 'Save Profile Changes'}
+              {isSavingProfile ? 'Saving...' : 'Save Appearance'}
             </Button>
           </div>
         </form>
       </Card>
 
-      {/* Profile Details Card */}
+      {/* Session & Identity Details Card */}
       <Card>
         <CardHeader>
           <div>
@@ -218,7 +597,7 @@ export default function AccountPage() {
           </div>
         </CardHeader>
 
-        <div className="space-y-4 pt-2 text-xs">
+        <div className="space-y-4 p-4 pt-0 text-xs">
           <div className="flex items-center justify-between p-3 bg-surface-elevated border border-border rounded-control">
             <div className="flex items-center gap-2.5">
               <User className="w-4 h-4 text-text-muted" />
@@ -247,16 +626,6 @@ export default function AccountPage() {
             <Badge variant={user?.isAdmin ? 'info' : 'default'}>
               {user?.isAdmin ? 'ADMINISTRATOR' : 'CUSTOMER'}
             </Badge>
-          </div>
-
-          <div className="flex items-center justify-between p-3 bg-surface-elevated border border-border rounded-control">
-            <div className="flex items-center gap-2.5">
-              <Globe className="w-4 h-4 text-text-muted" />
-              <span className="text-text-secondary">Language</span>
-            </div>
-            <span className="font-mono text-text-primary uppercase">
-              {user?.language || 'en'}
-            </span>
           </div>
         </div>
       </Card>

@@ -66,6 +66,14 @@ export class ApiKeysService {
 
     this.logger.log(`Created Application API key [${identifier}] for admin user #${userId} (${description})`);
 
+    await this.prisma.activityLog.create({
+      data: {
+        userId,
+        event: 'account:apikey.created',
+        description: `Created Application API key [${identifier}] (${description})`,
+      },
+    }).catch(() => {});
+
     return {
       apiKey: {
         id: apiKey.id,
@@ -86,6 +94,15 @@ export class ApiKeysService {
     if (!key) throw new NotFoundException('API key not found');
 
     await this.prisma.apiKey.delete({ where: { id } });
+
+    await this.prisma.activityLog.create({
+      data: {
+        userId: key.userId,
+        event: 'account:apikey.deleted',
+        description: `Revoked Application API key [${key.identifier}]`,
+      },
+    }).catch(() => {});
+
     return { success: true, message: `Application API key ${key.identifier} revoked` };
   }
 
@@ -139,6 +156,14 @@ export class ApiKeysService {
       },
     });
 
+    await this.prisma.activityLog.create({
+      data: {
+        userId,
+        event: 'account:apikey.created',
+        description: `Created Client API key [${identifier}] (${description})`,
+      },
+    }).catch(() => {});
+
     return {
       apiKey: {
         id: apiKey.id,
@@ -159,6 +184,15 @@ export class ApiKeysService {
     if (!key) throw new NotFoundException('API key not found');
 
     await this.prisma.apiKey.delete({ where: { id } });
+
+    await this.prisma.activityLog.create({
+      data: {
+        userId,
+        event: 'account:apikey.deleted',
+        description: `Revoked Client API key [${key.identifier}]`,
+      },
+    }).catch(() => {});
+
     return { success: true, message: `Account API key ${key.identifier} revoked` };
   }
 }

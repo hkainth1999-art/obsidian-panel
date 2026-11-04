@@ -344,4 +344,268 @@ export class UsersService {
     await this.prisma.user.delete({ where: { id } });
     return { success: true, message: `User ${user.username} deleted` };
   }
+
+  // ─── Account Profile & Credentials Self-Service ─────────────────────
+
+  async updateUsername(userId: number, newUsername: string, ip?: string) {
+    const cleanUsername = newUsername?.trim();
+    if (!cleanUsername || cleanUsername.length < 3) {
+      throw new BadRequestException('Username must be at least 3 characters long.');
+    }
+    if (!/^[a-zA-Z0-9_.-]+$/.test(cleanUsername)) {
+      throw new BadRequestException('Username can only contain letters, numbers, underscores, dots, and hyphens.');
+    }
+
+    const currentUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!currentUser) throw new NotFoundException('User not found.');
+
+    if (currentUser.username.toLowerCase() === cleanUsername.toLowerCase()) {
+      return currentUser;
+    }
+
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        username: { equals: cleanUsername, mode: 'insensitive' },
+        NOT: { id: userId },
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException(`Username '${cleanUsername}' is already taken.`);
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { username: cleanUsername },
+      select: {
+        id: true,
+        uuid: true,
+        username: true,
+        email: true,
+        isAdmin: true,
+        language: true,
+      },
+    });
+
+    await this.prisma.activityLog.create({
+      data: {
+        userId,
+        event: 'account:username.updated',
+        description: `Username changed from ${currentUser.username} to ${cleanUsername}`,
+        ip: ip || null,
+        properties: { oldUsername: currentUser.username, newUsername: cleanUsername },
+      },
+    }).catch(() => {});
+
+    return updated;
+  }
+
+  async updateEmail(userId: number, dto: { email: string; currentPassword: string }, ip?: string) {
+    const cleanEmail = dto.email?.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      throw new BadRequestException('Please provide a valid email address.');
+    }
+    if (!dto.currentPassword) {
+      throw new BadRequestException('Your current password is required to change your email address.');
+    }
+
+    const currentUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!currentUser) throw new NotFoundException('User not found.');
+
+    // Verify current password
+    const validPass = await argon2.verify(currentUser.password, dto.currentPassword);
+    if (!validPass) {
+      throw new BadRequestException('Incorrect current password.');
+    }
+
+    if (currentUser.email === cleanEmail) {
+      return { success: true, message: 'Email is already set to this address.', email: cleanEmail };
+    }
+
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        email: cleanEmail,
+        NOT: { id: userId },
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException(`Email address '${cleanEmail}' is already registered to another account.`);
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { email: cleanEmail },
+      select: {
+        id: true,
+        uuid: true,
+        username: true,
+        email: true,
+        isAdmin: true,
+        language: true,
+      },
+    });
+
+    await this.prisma.activityLog.create({
+      data: {
+        userId,
+        event: 'account:email.updated',
+        description: `Email address changed to ${cleanEmail}`,
+        ip: ip || null,
+        properties: { oldEmail: currentUser.email, newEmail: cleanEmail },
+      },
+    }).catch(() => {});
+
+    return {
+      success: true,
+      message: 'Email address updated successfully.',
+      user: updated,
+    };
+  }
+
+  async updatePassword(userId: number, dto: { currentPassword: string; newPassword: string }, ip?: string) {
+    if (!dto.currentPassword) {
+      throw new BadRequestException('Your current password is required.');
+    }
+    if (!dto.newPassword || dto.newPassword.length < 8) {
+      throw new BadRequestException('New password must be at least 8 characters long.');
+    }
+
+    const currentUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!currentUser) throw new NotFoundException('User not found.');
+
+    // Verify current password
+    const validPass = await argon2.verify(currentUser.password, dto.currentPassword);
+    if (!validPass) {
+      throw new BadRequestException('Incorrect current password.');
+    }
+
+    const newHash = await argon2.hash(dto.newPassword);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: newHash },
+    });
+
+    await this.prisma.activityLog.create({
+      data: {
+        userId,
+        event: 'account:password.updated',
+        description: 'Account password changed successfully',
+        ip: ip || null,
+        properties: {},
+      },
+    }).catch(() => {});
+
+    return {
+      success: true,
+      message: 'Password changed successfully.',
+    };
+  }
+
+  async getActivity(userId: number, page: number = 1, perPage: number = 25, search?: string) {
+    const skip = (page - 1) * perPage;
+    const cleanSearch = search?.trim();
+
+    // Query activity logs belonging to this user or servers owned by this user
+    const where: any = {
+      OR: [
+        { userId },
+        { server: { userId } },
+      ],
+    };
+
+    if (cleanSearch) {
+      where.AND = [
+        {
+          OR: [
+            { event: { contains: cleanSearch, mode: 'insensitive' } },
+            { description: { contains: cleanSearch, mode: 'insensitive' } },
+            { ip: { contains: cleanSearch, mode: 'insensitive' } },
+          ],
+        },
+      ];
+    }
+
+    const [total, logs] = await Promise.all([
+      this.prisma.activityLog.count({ where }),
+      this.prisma.activityLog.findMany({
+        where,
+        skip,
+        take: perPage,
+        orderBy: { timestamp: 'desc' },
+        include: {
+          server: {
+            select: { id: true, uuid: true, uuidShort: true, name: true },
+          },
+          user: {
+            select: { id: true, username: true, email: true },
+          },
+        },
+      }),
+    ]);
+
+    const mapped = logs.map((log) => ({
+      id: String(log.id),
+      event: log.event,
+      description: log.description || this.formatEventDescription(log.event, log.properties),
+      ip: log.ip,
+      properties: log.properties,
+      timestamp: log.timestamp.toISOString(),
+      server: log.server,
+      user: log.user,
+    }));
+
+    return {
+      data: mapped,
+      meta: {
+        page,
+        perPage,
+        total,
+        totalPages: Math.ceil(total / perPage),
+      },
+    };
+  }
+
+  private formatEventDescription(event: string, properties: any): string {
+    switch (event) {
+      case 'auth:login.success':
+        return 'Logged in successfully';
+      case 'auth:logout':
+        return 'Logged out';
+      case 'account:username.updated':
+        return 'Changed account username';
+      case 'account:email.updated':
+        return 'Updated email address';
+      case 'account:password.updated':
+        return 'Changed account password';
+      case 'account:apikey.created':
+        return 'Generated a new API key';
+      case 'account:apikey.deleted':
+        return 'Revoked an API key';
+      case 'server:power.start':
+        return 'Sent start signal to server';
+      case 'server:power.stop':
+        return 'Sent graceful stop signal to server';
+      case 'server:power.restart':
+        return 'Sent restart signal to server';
+      case 'server:power.kill':
+        return 'Terminated server process';
+      case 'server:console.command':
+        return 'Dispatched console command';
+      case 'server:backup.create':
+        return 'Initiated server backup creation';
+      case 'server:backup.delete':
+        return 'Deleted server backup';
+      case 'server:version.install':
+        return `Installed version ${(properties as any)?.software || ''} ${(properties as any)?.version || ''}`;
+      case 'backup:completed':
+        return 'Server backup finished successfully';
+      case 'backup:failed':
+        return 'Server backup failed to complete';
+      case 'backup:restore.completed':
+        return 'Server backup restoration finished';
+      default:
+        return event.replace(/[:._]/g, ' ');
+    }
+  }
 }

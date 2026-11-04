@@ -88,6 +88,15 @@ export class AuthController {
       req.headers['user-agent'] ?? '',
     );
 
+    await this.prisma.activityLog.create({
+      data: {
+        userId: user.id,
+        event: 'auth:login.success',
+        description: 'Signed into account successfully',
+        ip: req.ip,
+      },
+    }).catch(() => {});
+
     const isHttps =
       req.headers['x-forwarded-proto'] === 'https' ||
       req.protocol === 'https' ||
@@ -166,6 +175,17 @@ export class AuthController {
     if (req.session) {
       await this.prisma.session.delete({
         where: { id: req.session.id },
+      }).catch(() => {});
+    }
+
+    if (req.user?.id) {
+      await this.prisma.activityLog.create({
+        data: {
+          userId: req.user.id,
+          event: 'auth:logout',
+          description: 'Signed out of active session',
+          ip: req.ip,
+        },
       }).catch(() => {});
     }
 

@@ -567,6 +567,16 @@ export class ServersService {
     } else if (action === 'kill') {
       ServersService.setServerState(uuid, 'offline');
     }
+
+    await this.prisma.activityLog.create({
+      data: {
+        userId: server.userId,
+        serverId: server.id,
+        event: `server:power.${action}`,
+        description: `Sent ${action} signal to server "${server.name}"`,
+      },
+    }).catch(() => {});
+
     return { success: true, action };
   }
 
@@ -574,6 +584,16 @@ export class ServersService {
     const server = await this.getServerByUuid(uuid);
     const client = this.getWingsClient(server.node);
     await client.sendCommands(server.uuid, [command]);
+
+    await this.prisma.activityLog.create({
+      data: {
+        userId: server.userId,
+        serverId: server.id,
+        event: 'server:console.command',
+        description: `Console command: ${command.substring(0, 80)}`,
+      },
+    }).catch(() => {});
+
     return { success: true };
   }
 

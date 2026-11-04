@@ -104,3 +104,51 @@ export class UserProfileController {
     return this.usersService.updateProfile(req.user.id, dto);
   }
 }
+
+@ApiTags('Account Self-Service')
+@ApiCookieAuth()
+@UseGuards(SessionGuard)
+@Controller('api/account')
+export class AccountController {
+  constructor(private readonly usersService: UsersService) {}
+
+  @Patch('username')
+  @ApiOperation({ summary: 'Update username for the authenticated user' })
+  async updateUsername(
+    @Req() req: any,
+    @Body() body: { username: string },
+  ) {
+    return this.usersService.updateUsername(req.user.id, body.username, req.ip);
+  }
+
+  @Patch('email')
+  @ApiOperation({ summary: 'Update email address (requires current password)' })
+  async updateEmail(
+    @Req() req: any,
+    @Body() body: { email: string; currentPassword: string },
+  ) {
+    return this.usersService.updateEmail(req.user.id, body, req.ip);
+  }
+
+  @Patch('password')
+  @ApiOperation({ summary: 'Update password (requires current password)' })
+  async updatePassword(
+    @Req() req: any,
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    return this.usersService.updatePassword(req.user.id, body, req.ip);
+  }
+
+  @Get('activity')
+  @ApiOperation({ summary: 'Get recent account and server activity logs' })
+  async getActivity(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+    @Query('search') search?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limit = perPage ? parseInt(perPage, 10) : 25;
+    return this.usersService.getActivity(req.user.id, pageNum, limit, search);
+  }
+}
