@@ -358,7 +358,12 @@ export class VersionsService {
    */
   async resolveDownloadUrl(software: string, version: string): Promise<{ downloadUrl: string; jarName: string }> {
     const sw = software.toLowerCase().trim();
-    const ver = version.trim();
+    let ver = (version || '').trim();
+
+    // Standardize 'latest' or empty to the latest stable Minecraft release (1.21.4)
+    if (!ver || ver.toLowerCase() === 'latest') {
+      ver = '1.21.4';
+    }
 
     // 1. Purpur
     if (sw === 'purpur') {
@@ -533,12 +538,22 @@ export class VersionsService {
 
     // 1. Download JAR file onto the server filesystem via Wings
     try {
+      this.logger.log(`Attempting Wings pullFile for ${targetJar} from ${downloadUrl}`);
       await client.pullFile(server.uuid, downloadUrl, '/', targetJar, true);
     } catch (pullErr: any) {
-      this.logger.warn(`Wings pullFile failed (${pullErr.message}), falling back to direct write...`);
-      throw new BadRequestException(
-        `Failed to pull server jar from remote source via Wings: ${pullErr.message}`,
-      );
+      this.logger.warn(`Wings foreground pullFile failed (${pullErr.message}), trying background pull...`);
+      try {
+        await client.pullFile(server.uuid, downloadUrl, '/', targetJar, false);
+      } catch (bgErr: any) {
+        this.logger.warn(`Wings background pull failed (${bgErr.message}), falling back to direct download via Panel...`);
+        const jarResp = await fetch(downloadUrl);
+        if (!jarResp.ok) {
+          throw new BadRequestException(`Failed to download server jar from ${downloadUrl}: HTTP ${jarResp.status}`);
+        }
+        const jarBuf = Buffer.from(await jarResp.arrayBuffer());
+        await client.writeFile(server.uuid, targetJar, jarBuf);
+        this.logger.log(`Successfully wrote ${targetJar} directly via Panel (${jarBuf.length} bytes)`);
+      }
     }
 
     // 2. Ensure eula.txt is accepted
@@ -645,6 +660,12 @@ export class VersionsService {
           jarFile: targetJar,
         },
       },
+    });
+
+    // 7. Ensure server is marked 'offline' and ready for startup
+    await this.prisma.server.update({
+      where: { id: server.id },
+      data: { status: 'offline' },
     });
 
     return {

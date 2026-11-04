@@ -4,11 +4,14 @@ import {
   BadRequestException,
   ConflictException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WingsRemoteService } from '../wings-remote/wings-remote.service';
 import { AuthService } from '../auth/auth.service';
+import { VersionsService } from './versions.service';
 import { WingsClient } from '@obsidian/wings-adapter';
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
@@ -39,6 +42,8 @@ export class ServersService {
     private readonly wingsRemoteService: WingsRemoteService,
     private readonly authService: AuthService,
     private readonly config: ConfigService,
+    @Inject(forwardRef(() => VersionsService))
+    private readonly versionsService: VersionsService,
   ) {
     // Periodic background sweep for automatic server suspensions (every 60 seconds)
     setInterval(() => {
@@ -427,8 +432,18 @@ export class ServersService {
       try {
         const fullServer = await this.prisma.server.findUnique({
           where: { id: createdServer.id },
-          include: { allocation: true },
+          include: {
+            allocation: true,
+            egg: {
+              include: {
+                nest: true,
+                variables: true,
+              },
+            },
+            variables: true,
+          },
         });
+
         if (fullServer?.allocation) {
           const targetPort = String(fullServer.allocation.port);
           const rawIp = fullServer.allocation.ip;
@@ -445,9 +460,71 @@ export class ServersService {
           await client.writeFile(createdServer.uuid, 'server.properties', props);
           await client.writeFile(createdServer.uuid, 'eula.txt', 'eula=true\n');
         }
+
+        // Detect if server is a Minecraft server and automatically install latest server jar
+        const nestName = fullServer?.egg?.nest?.name?.toLowerCase() || '';
+        const eggName = fullServer?.egg?.name?.toLowerCase() || '';
+        const hasJarVar = fullServer?.egg?.variables?.some((v) => v.envVariable === 'SERVER_JARFILE');
+        const hasMcVerVar = fullServer?.egg?.variables?.some((v) =>
+          ['MINECRAFT_VERSION', 'MC_VERSION', 'VANILLA_VERSION'].includes(v.envVariable),
+        );
+
+        const isMinecraft =
+          nestName.includes('minecraft') ||
+          eggName.includes('minecraft') ||
+          eggName.includes('paper') ||
+          eggName.includes('purpur') ||
+          eggName.includes('fabric') ||
+          eggName.includes('forge') ||
+          eggName.includes('spigot') ||
+          eggName.includes('velocity') ||
+          hasJarVar ||
+          hasMcVerVar;
+
+        if (isMinecraft) {
+          let software = 'paper';
+          if (eggName.includes('purpur')) software = 'purpur';
+          else if (eggName.includes('vanilla')) software = 'vanilla';
+          else if (eggName.includes('fabric')) software = 'fabric';
+          else if (eggName.includes('velocity')) software = 'velocity';
+          else if (eggName.includes('sponge')) software = 'sponge';
+          else if (eggName.includes('forge')) software = 'forge';
+          else if (eggName.includes('paper')) software = 'paper';
+
+          const jarVar = fullServer?.egg?.variables?.find((v) => v.envVariable === 'SERVER_JARFILE');
+          const serverJarVar = fullServer?.variables?.find((v) => v.variableId === jarVar?.id);
+          const targetJar = serverJarVar?.variableValue || jarVar?.defaultValue || `${software}.jar`;
+
+          const verVar = fullServer?.egg?.variables?.find((v) =>
+            ['MINECRAFT_VERSION', 'MC_VERSION', 'VANILLA_VERSION'].includes(v.envVariable),
+          );
+          const serverVerVar = fullServer?.variables?.find((v) => v.variableId === verVar?.id);
+          const targetVersion = serverVerVar?.variableValue || verVar?.defaultValue || '1.21.4';
+
+          this.logger.log(
+            `Auto-installing latest Minecraft jar (${software} ${targetVersion} -> ${targetJar}) for server ${createdServer.uuid}...`,
+          );
+
+          try {
+            await this.versionsService.installVersion(createdServer.uuid, {
+              software,
+              version: targetVersion,
+              customJarName: targetJar,
+            });
+            this.logger.log(`Minecraft jar successfully installed for ${createdServer.uuid}`);
+          } catch (jarErr: any) {
+            this.logger.warn(`Could not auto-install jar for ${createdServer.uuid}: ${jarErr.message}`);
+          }
+        }
       } catch (seedErr: any) {
-        this.logger.warn(`Non-critical: could not pre-seed server.properties for ${createdServer.uuid}: ${seedErr.message}`);
+        this.logger.warn(`Non-critical: could not pre-seed server.properties or jar for ${createdServer.uuid}: ${seedErr.message}`);
       }
+
+      // Mark server as offline and ready for startup
+      await this.prisma.server.update({
+        where: { id: createdServer.id },
+        data: { status: 'offline' },
+      });
     } catch (err: any) {
       this.logger.error(`Failed to push server ${createdServer.uuid} to Wings: ${err.message}`);
       // Clean up database completely so rejected server is not saved or left dangling in panel
@@ -561,6 +638,57 @@ export class ServersService {
       where: { id: server.id },
       data: { status: 'installing' },
     });
+
+    // For Minecraft servers, trigger jar re-installation
+    try {
+      const fullServer = await this.prisma.server.findUnique({
+        where: { id: server.id },
+        include: {
+          egg: { include: { nest: true, variables: true } },
+          variables: true,
+        },
+      });
+
+      const nestName = fullServer?.egg?.nest?.name?.toLowerCase() || '';
+      const eggName = fullServer?.egg?.name?.toLowerCase() || '';
+      const isMinecraft =
+        nestName.includes('minecraft') ||
+        eggName.includes('minecraft') ||
+        eggName.includes('paper') ||
+        eggName.includes('purpur') ||
+        eggName.includes('fabric') ||
+        eggName.includes('vanilla');
+
+      if (isMinecraft) {
+        let software = 'paper';
+        if (eggName.includes('purpur')) software = 'purpur';
+        else if (eggName.includes('vanilla')) software = 'vanilla';
+        else if (eggName.includes('fabric')) software = 'fabric';
+
+        const jarVar = fullServer?.egg?.variables?.find((v) => v.envVariable === 'SERVER_JARFILE');
+        const serverJarVar = fullServer?.variables?.find((v) => v.variableId === jarVar?.id);
+        const targetJar = serverJarVar?.variableValue || jarVar?.defaultValue || `${software}.jar`;
+
+        const verVar = fullServer?.egg?.variables?.find((v) =>
+          ['MINECRAFT_VERSION', 'MC_VERSION', 'VANILLA_VERSION'].includes(v.envVariable),
+        );
+        const serverVerVar = fullServer?.variables?.find((v) => v.variableId === verVar?.id);
+        const targetVersion = serverVerVar?.variableValue || verVar?.defaultValue || '1.21.4';
+
+        this.versionsService
+          .installVersion(server.uuid, {
+            software,
+            version: targetVersion,
+            customJarName: targetJar,
+          })
+          .catch((err) => {
+            this.logger.warn(`Async reinstall jar error for ${server.uuid}: ${err.message}`);
+          });
+      }
+    } catch (reinstallJarErr: any) {
+      this.logger.warn(`Failed to inspect server for jar reinstallation: ${reinstallJarErr.message}`);
+    }
+
     return { success: true, message: 'Server reinstallation triggered' };
   }
 
